@@ -6,7 +6,7 @@ on:
 env:
   OPENWRT_VERSION: 23.05.5
   OPENWRT_TARGET: x86/64
-  PACKAGE_NAME: luci-app-template
+  PACKAGE_NAME: luci-app-nora
 
 jobs:
   build:
