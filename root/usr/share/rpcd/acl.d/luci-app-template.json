@@ -1,0 +1,11 @@
+{
+	"luci-app-template": {
+		"description": "Grant access to LuCI app template",
+		"read": {
+			"uci": [ "template" ]
+		},
+		"write": {
+			"uci": [ "template" ]
+		}
+	}
+}
