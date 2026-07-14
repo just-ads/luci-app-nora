@@ -1,41 +1,57 @@
-# luci-app-template
+# luci-app-nora
 
-A minimal OpenWrt LuCI application template using the modern JavaScript view API.
+用于在 OpenWrt 上部署和管理 Nora 私有 npm Registry 的 LuCI 应用。
 
-## Files
+## 功能特性
 
-- `Makefile`: OpenWrt/LuCI package metadata.
-- `htdocs/luci-static/resources/view/template.js`: LuCI UI page.
-- `root/etc/config/template`: default UCI config.
-- `root/etc/init.d/template`: example init script.
-- `root/usr/share/luci/menu.d/luci-app-template.json`: menu entry and ACL binding.
-- `root/usr/share/rpcd/acl.d/luci-app-template.json`: read/write permissions.
-- `Makefile` `prerm/postrm`: stop/disable service, remove related config/residual files, and refresh LuCI/rpcd state during uninstall.
-- `po/zh_Hans/template.po`: Simplified Chinese translation sample.
+- 通过 `/etc/config/nora` 使用 UCI 管理 Nora 配置
+- 通过 `/etc/init.d/nora` 使用 procd 管理服务
+- 提供安装、升级、配置生成和防火墙管理功能
+- 在 LuCI 的“服务”菜单中提供 Nora 管理页面
+- 支持启停、重启和运行状态查看
+- 支持配置监听地址、端口、公开 URL、存储路径和 npm 上游代理
+- 可选管理专属的 `firewall.nora` 防火墙规则，不改动其他规则
+- 支持上传单用户 bcrypt htpasswd 行，认证信息不会写入 UCI
+- 支持 `amd64`、`arm64` 和 `armv7`，也可自动识别设备架构
 
-## Build
+## 软件包结构
 
-Copy this directory into the OpenWrt source tree, for example:
+- `root/etc/config/nora`：默认 UCI 配置
+- `root/etc/init.d/nora`：procd 服务脚本
+- `root/usr/libexec/nora-control`：安装、升级、配置生成和防火墙控制脚本
+- `root/usr/libexec/rpcd/luci.nora`：供 LuCI 调用的固定 rpcd 方法
+- `htdocs/luci-static/resources/view/nora.js`：LuCI 管理页面
+- `root/usr/share/luci/menu.d/luci-app-nora.json`：LuCI 菜单项
+- `root/usr/share/rpcd/acl.d/luci-app-nora.json`：UCI `nora` 和 ubus `luci.nora` 的访问控制规则
+- `po/zh_Hans/nora.po`：简体中文翻译
+
+## 编译
+
+将本目录复制到 OpenWrt 源码树或 SDK，例如：
 
 ```sh
-package/luci-app-template
+package/luci-app-nora
 ```
 
-Then enable it:
+然后选择并编译软件包：
 
 ```sh
 make menuconfig
-# LuCI -> Applications -> luci-app-template
-make package/luci-app-template/compile V=s
+# LuCI -> Applications -> luci-app-nora
+make package/luci-app-nora/compile V=s
 ```
 
-## CI
+## 使用说明
 
-This template includes a manually triggered GitHub Actions workflow at `.github/workflows/build.yml`.
-Run it from the GitHub Actions page with `workflow_dispatch`. It downloads the OpenWrt SDK, copies only this package source into the SDK, builds only `luci-app-template`, and uploads only this package's generated `.ipk` as an artifact.
+- 默认安装目录为 `/opt/nora`，默认监听端口为 `4873`。
+- 默认启用认证且关闭匿名读取。使用前需上传有效的单行 bcrypt htpasswd。
+- npm 上游代理为空时，Nora 以纯私有 npm Registry 模式运行。
+- 修改配置后，请先执行“保存并应用”，再生成配置或操作服务。
+- 服务启动和前台调试均通过 `NORA_CONFIG_PATH` 指定配置文件，并直接运行 `nora` 二进制。
+- 卸载软件包时会保留 `/opt/nora` 下的 Nora 数据。
 
-The default CI target is OpenWrt `23.05.5` for `x86/64`. Adjust `OPENWRT_VERSION` and the matrix target in the workflow if you need other releases or architectures.
+## 参考文档
 
-## Customize
-
-Rename `template` and `luci-app-template` to your real app name in all files, then extend the UCI options and LuCI form fields as needed.
+- Nora 配置说明：<https://getnora.dev/configuration/settings/>
+- Nora 认证说明：<https://getnora.dev/configuration/authentication/>
+- Nora 安装说明：<https://getnora.dev/getting-started/installation/>
