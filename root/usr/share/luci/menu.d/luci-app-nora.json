@@ -1,0 +1,14 @@
+{
+	"admin/services/nora": {
+		"title": "Nora",
+		"order": 90,
+		"action": {
+			"type": "view",
+			"path": "nora"
+		},
+		"depends": {
+			"acl": [ "luci-app-nora" ],
+			"uci": { "nora": true }
+		}
+	}
+}

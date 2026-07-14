@@ -1,0 +1,17 @@
+{
+	"luci-app-nora": {
+		"description": "Grant access to LuCI Nora management",
+		"read": {
+			"uci": [ "nora" ],
+			"ubus": {
+				"luci.nora": [ "status" ]
+			}
+		},
+		"write": {
+			"uci": [ "nora" ],
+			"ubus": {
+				"luci.nora": [ "install", "upgrade", "render_config", "start", "stop", "restart", "set_htpasswd", "firewall_apply" ]
+			}
+		}
+	}
+}
