@@ -1,0 +1,97 @@
+#!/bin/sh
+
+. /usr/share/libubox/jshn.sh
+
+CONTROL="/usr/libexec/nora-control"
+
+list_methods() {
+	cat <<'EOF'
+{
+	"status": {},
+	"install": {
+		"version": "String"
+	},
+	"upgrade": {},
+	"render_config": {},
+	"start": {},
+	"stop": {},
+	"restart": {},
+	"set_htpasswd": {
+		"line": "String"
+	},
+	"firewall_apply": {}
+}
+EOF
+}
+
+read_input() {
+	INPUT="$(cat)"
+	[ -n "$INPUT" ] || INPUT='{}'
+	json_load "$INPUT" >/dev/null 2>&1 || {
+		json_init
+		json_add_boolean success 0
+		json_add_string error "invalid json input"
+		json_dump
+		exit 1
+	}
+}
+
+call_control() {
+	"$CONTROL" "$@"
+}
+
+handle_call() {
+	read_input
+	case "$1" in
+		status)
+			call_control status
+			;;
+		install)
+			local version
+			json_get_var version version
+			call_control install "${version:-latest}"
+			;;
+		upgrade)
+			call_control upgrade
+			;;
+		render_config)
+			call_control render-config
+			;;
+		start)
+			call_control start
+			;;
+		stop)
+			call_control stop
+			;;
+		restart)
+			call_control restart
+			;;
+		set_htpasswd)
+			local line
+			json_get_var line line
+			call_control set-htpasswd "$line"
+			;;
+		firewall_apply)
+			call_control firewall-apply
+			;;
+		*)
+			json_init
+			json_add_boolean success 0
+			json_add_string error "unknown method"
+			json_dump
+			exit 1
+			;;
+	esac
+}
+
+case "$1" in
+	list)
+		list_methods
+		;;
+	call)
+		handle_call "$2"
+		;;
+	*)
+		exit 1
+		;;
+esac

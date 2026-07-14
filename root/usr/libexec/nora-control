@@ -1,0 +1,493 @@
+#!/bin/sh
+
+. /lib/functions.sh
+. /usr/share/libubox/jshn.sh
+
+UCI_CONFIG="nora"
+UCI_SECTION="config"
+SERVICE_SCRIPT="/etc/init.d/nora"
+
+fail() {
+	local message="$1"
+	json_init
+	json_add_boolean success 0
+	json_add_string error "$message"
+	json_dump
+	exit 1
+}
+
+ok_message() {
+	local action="$1"
+	local message="$2"
+	json_init
+	json_add_boolean success 1
+	json_add_string action "$action"
+	json_add_string message "$message"
+	json_dump
+}
+
+require_command() {
+	command -v "$1" >/dev/null 2>&1 || fail "missing command: $1"
+}
+
+is_bool() {
+	case "$1" in
+		0|1) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+is_uint() {
+	case "$1" in
+		''|*[!0-9]*) return 1 ;;
+		*) return 0 ;;
+	esac
+}
+
+validate_port() {
+	is_uint "$1" || return 1
+	[ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+validate_timeout() {
+	is_uint "$1" || return 1
+	[ "$1" -ge 0 ] && [ "$1" -le 86400 ]
+}
+
+validate_version() {
+	[ "$1" = "latest" ] && return 0
+	printf '%s' "$1" | grep -Eq '^v?[0-9]+(\.[0-9]+)+([.-][A-Za-z0-9]+)*([+][A-Za-z0-9.]+)?$'
+}
+
+validate_architecture() {
+	case "$1" in
+		auto|amd64|arm64|armv7) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+validate_abs_path() {
+	case "$1" in
+		/*)
+			printf '%s' "$1" | grep -Eq '^/[A-Za-z0-9._/+-]+$'
+			return $?
+			;;
+		*) return 1 ;;
+	esac
+}
+
+validate_host() {
+	printf '%s' "$1" | grep -Eq '^[A-Za-z0-9:._-]+$'
+}
+
+validate_url_or_empty() {
+	[ -z "$1" ] && return 0
+	printf '%s' "$1" | grep -Eq '^https?://[A-Za-z0-9._~:/?#\[\]@!$&()*+,;=%-]+$'
+}
+
+validate_firewall_src() {
+	printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_-]+$'
+}
+
+validate_username() {
+	printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._-]+$'
+}
+
+validate_bcrypt_hash() {
+	printf '%s' "$1" | grep -Eq '^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
+}
+
+validate_htpasswd_line() {
+	local line="$1"
+	local user hash rest
+
+	[ "$(printf '%s' "$line" | wc -l | tr -d ' ')" = "0" ] || return 1
+	case "$line" in
+		*"$(printf '\r')"*) return 1 ;;
+	esac
+
+	user="${line%%:*}"
+	rest="${line#*:}"
+	[ -n "$user" ] || return 1
+	[ "$line" != "$rest" ] || return 1
+	case "$rest" in
+		*:* ) return 1 ;;
+	esac
+	hash="$rest"
+	validate_username "$user" || return 1
+	validate_bcrypt_hash "$hash" || return 1
+	return 0
+}
+
+toml_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+resolve_architecture() {
+	local configured="$1"
+	local detected
+
+	if [ "$configured" != "auto" ]; then
+		printf '%s' "$configured"
+		return 0
+	fi
+
+	detected="$(uname -m 2>/dev/null)"
+	case "$detected" in
+		x86_64) printf '%s' 'amd64' ;;
+		aarch64) printf '%s' 'arm64' ;;
+		armv7* ) printf '%s' 'armv7' ;;
+		*) return 1 ;;
+	esac
+}
+
+normalize_version() {
+	case "$1" in
+		latest) printf '%s' 'latest' ;;
+		v*) printf '%s' "$1" ;;
+		*) printf 'v%s' "$1" ;;
+	esac
+}
+
+config_load_values() {
+	config_load "$UCI_CONFIG" || fail "unable to load UCI config nora"
+
+	config_get_bool CFG_ENABLED "$UCI_SECTION" enabled 0
+	config_get CFG_INSTALL_DIR "$UCI_SECTION" install_dir '/opt/nora'
+	config_get CFG_VERSION "$UCI_SECTION" version 'latest'
+	config_get CFG_ARCHITECTURE "$UCI_SECTION" architecture 'auto'
+	config_get CFG_HOST "$UCI_SECTION" host '0.0.0.0'
+	config_get CFG_PORT "$UCI_SECTION" port '4873'
+	config_get CFG_PUBLIC_URL "$UCI_SECTION" public_url ''
+	config_get CFG_STORAGE_PATH "$UCI_SECTION" storage_path "$CFG_INSTALL_DIR/data/storage"
+	config_get_bool CFG_AUTH_ENABLED "$UCI_SECTION" auth_enabled 1
+	config_get_bool CFG_ANONYMOUS_READ "$UCI_SECTION" anonymous_read 0
+	config_get CFG_HTPASSWD_FILE "$UCI_SECTION" htpasswd_file "$CFG_INSTALL_DIR/config/users.htpasswd"
+	config_get CFG_TOKEN_STORAGE "$UCI_SECTION" token_storage "$CFG_INSTALL_DIR/data/tokens"
+	config_get_bool CFG_NPM_ENABLED "$UCI_SECTION" npm_enabled 1
+	config_get CFG_NPM_PROXY "$UCI_SECTION" npm_proxy ''
+	config_get CFG_NPM_PROXY_TIMEOUT "$UCI_SECTION" npm_proxy_timeout '30'
+	config_get CFG_NPM_METADATA_TTL "$UCI_SECTION" npm_metadata_ttl '300'
+	config_get_bool CFG_FIREWALL_ENABLED "$UCI_SECTION" firewall_enabled 0
+	config_get CFG_FIREWALL_SRC "$UCI_SECTION" firewall_src 'lan'
+
+	validate_config_values
+}
+
+validate_config_values() {
+	is_bool "$CFG_ENABLED" || fail "invalid enabled"
+	validate_abs_path "$CFG_INSTALL_DIR" || fail "invalid install_dir"
+	validate_version "$CFG_VERSION" || fail "invalid version"
+	validate_architecture "$CFG_ARCHITECTURE" || fail "invalid architecture"
+	validate_host "$CFG_HOST" || fail "invalid host"
+	validate_port "$CFG_PORT" || fail "invalid port"
+	validate_url_or_empty "$CFG_PUBLIC_URL" || fail "invalid public_url"
+	validate_abs_path "$CFG_STORAGE_PATH" || fail "invalid storage_path"
+	is_bool "$CFG_AUTH_ENABLED" || fail "invalid auth_enabled"
+	is_bool "$CFG_ANONYMOUS_READ" || fail "invalid anonymous_read"
+	validate_abs_path "$CFG_HTPASSWD_FILE" || fail "invalid htpasswd_file"
+	validate_abs_path "$CFG_TOKEN_STORAGE" || fail "invalid token_storage"
+	is_bool "$CFG_NPM_ENABLED" || fail "invalid npm_enabled"
+	validate_url_or_empty "$CFG_NPM_PROXY" || fail "invalid npm_proxy"
+	validate_timeout "$CFG_NPM_PROXY_TIMEOUT" || fail "invalid npm_proxy_timeout"
+	validate_timeout "$CFG_NPM_METADATA_TTL" || fail "invalid npm_metadata_ttl"
+	is_bool "$CFG_FIREWALL_ENABLED" || fail "invalid firewall_enabled"
+	validate_firewall_src "$CFG_FIREWALL_SRC" || fail "invalid firewall_src"
+	CFG_RESOLVED_ARCH="$(resolve_architecture "$CFG_ARCHITECTURE")" || fail "unsupported auto architecture: $(uname -m 2>/dev/null)"
+
+	if [ "$CFG_AUTH_ENABLED" -eq 1 ] && [ -f "$CFG_HTPASSWD_FILE" ]; then
+		validate_htpasswd_line "$(cat "$CFG_HTPASSWD_FILE" 2>/dev/null)" || fail "invalid htpasswd file"
+	fi
+}
+
+ensure_directories() {
+	mkdir -p "$CFG_INSTALL_DIR" "$CFG_INSTALL_DIR/bin" "$CFG_INSTALL_DIR/config" "$CFG_STORAGE_PATH" "$CFG_TOKEN_STORAGE" || fail "failed to create directories"
+	mkdir -p "$(dirname "$CFG_HTPASSWD_FILE")" || fail "failed to create htpasswd directory"
+}
+
+render_config() {
+	local output tmp public_line npm_proxy_line
+	config_load_values
+	ensure_directories
+	output="$CFG_INSTALL_DIR/config/config.toml"
+	tmp="$output.tmp.$$"
+
+	if [ "$CFG_AUTH_ENABLED" -eq 1 ]; then
+		[ -s "$CFG_HTPASSWD_FILE" ] || fail "htpasswd file missing while auth is enabled"
+		validate_htpasswd_line "$(cat "$CFG_HTPASSWD_FILE" 2>/dev/null)" || fail "invalid htpasswd file"
+	fi
+
+	if [ -n "$CFG_PUBLIC_URL" ]; then
+		public_line="public_url = \"$(toml_escape "$CFG_PUBLIC_URL")\""
+	else
+		public_line="# public_url = \"https://registry.example.com\""
+	fi
+
+	if [ -n "$CFG_NPM_PROXY" ]; then
+		npm_proxy_line="proxy = \"$(toml_escape "$CFG_NPM_PROXY")\""
+	else
+		npm_proxy_line=''
+	fi
+
+	umask 077
+	cat > "$tmp" <<EOF
+[server]
+host = "$(toml_escape "$CFG_HOST")"
+port = $CFG_PORT
+$public_line
+
+[storage]
+mode = "local"
+path = "$(toml_escape "$CFG_STORAGE_PATH")"
+
+[auth]
+enabled = $( [ "$CFG_AUTH_ENABLED" -eq 1 ] && printf true || printf false )
+anonymous_read = $( [ "$CFG_ANONYMOUS_READ" -eq 1 ] && printf true || printf false )
+htpasswd_file = "$(toml_escape "$CFG_HTPASSWD_FILE")"
+token_storage = "$(toml_escape "$CFG_TOKEN_STORAGE")"
+
+[secrets]
+provider = "env"
+
+[rate_limit]
+enabled = false
+
+[npm]
+enabled = $( [ "$CFG_NPM_ENABLED" -eq 1 ] && printf true || printf false )
+$npm_proxy_line
+proxy_timeout = $CFG_NPM_PROXY_TIMEOUT
+metadata_ttl = $CFG_NPM_METADATA_TTL
+
+[docker]
+enabled = false
+[maven]
+enabled = false
+[cargo]
+enabled = false
+[pypi]
+enabled = false
+[go]
+enabled = false
+[raw]
+enabled = false
+[gems]
+enabled = false
+[terraform]
+enabled = false
+[ansible]
+enabled = false
+[nuget]
+enabled = false
+[pub_dart]
+enabled = false
+[conan]
+enabled = false
+
+[gc]
+enabled = false
+[retention]
+enabled = false
+[curation]
+mode = "off"
+EOF
+	[ $? -eq 0 ] || fail "failed to write config"
+	mv -f "$tmp" "$output" || fail "failed to install config"
+	ok_message "render-config" "rendered $output"
+}
+
+download_binary() {
+	local target_version="$1"
+	local tag asset url tmp target_tmp binary previous version_output
+
+	config_load_values
+	ensure_directories
+	require_command uclient-fetch
+	validate_version "$target_version" || fail "invalid install version"
+
+	binary="$CFG_INSTALL_DIR/bin/nora"
+	previous="$CFG_INSTALL_DIR/bin/nora.previous"
+	asset="nora-linux-$CFG_RESOLVED_ARCH"
+	tag="$(normalize_version "$target_version")"
+
+	if [ "$tag" = "latest" ]; then
+		url="https://github.com/getnora-io/nora/releases/latest/download/$asset"
+	else
+		url="https://github.com/getnora-io/nora/releases/download/$tag/$asset"
+	fi
+
+	tmp="/tmp/nora-download.$$"
+	target_tmp="$CFG_INSTALL_DIR/bin/.nora.new.$$"
+	rm -f "$tmp" "$target_tmp"
+	uclient-fetch -q -O "$tmp" "$url" || fail "download failed"
+	[ -s "$tmp" ] || fail "downloaded file is empty"
+	cp "$tmp" "$target_tmp" || fail "failed to stage binary"
+	chmod 0755 "$target_tmp" || fail "failed to chmod binary"
+	version_output="$($target_tmp --version 2>/dev/null || $target_tmp version 2>/dev/null || true)"
+	[ -n "$version_output" ] || fail "downloaded binary failed basic execution check"
+	if [ -e "$binary" ]; then
+		cp -fp "$binary" "$previous" || fail "failed to back up previous binary"
+	fi
+	mv -f "$target_tmp" "$binary" || {
+		[ -e "$previous" ] && [ ! -e "$binary" ] && cp -fp "$previous" "$binary" >/dev/null 2>&1 || true
+		fail "failed to replace binary"
+	}
+	rm -f "$tmp"
+
+	json_init
+	json_add_boolean success 1
+	json_add_string action "$2"
+	json_add_string version "$tag"
+	json_add_string architecture "$CFG_RESOLVED_ARCH"
+	json_add_string url "$url"
+	json_add_string binary "$binary"
+	json_add_string detected_version "$version_output"
+	json_dump
+}
+
+service_action() {
+	[ -x "$SERVICE_SCRIPT" ] || fail "service script missing"
+	"$SERVICE_SCRIPT" "$1" >/dev/null 2>&1 || fail "service action failed: $1"
+	ok_message "$1" "$1 ok"
+}
+
+set_htpasswd() {
+	local line="$1"
+	local tmp message
+	config_load_values
+	validate_htpasswd_line "$line" || fail "invalid bcrypt htpasswd line"
+	mkdir -p "$(dirname "$CFG_HTPASSWD_FILE")" || fail "failed to create htpasswd directory"
+	tmp="$CFG_HTPASSWD_FILE.tmp.$$"
+	umask 077
+	printf '%s\n' "$line" > "$tmp" || fail "failed to write temporary htpasswd file"
+	chmod 0600 "$tmp" || fail "failed to chmod htpasswd file"
+	mv -f "$tmp" "$CFG_HTPASSWD_FILE" || fail "failed to replace htpasswd file"
+	message="htpasswd updated"
+	if [ "$CFG_ENABLED" -eq 1 ] && [ -x "$CFG_INSTALL_DIR/bin/nora" ]; then
+		[ -x "$SERVICE_SCRIPT" ] || fail "htpasswd updated but service script missing"
+		"$SERVICE_SCRIPT" restart >/dev/null 2>&1 || fail "htpasswd updated but restart failed"
+		message="$message and Nora restarted"
+	else
+		message="$message without restart"
+	fi
+	ok_message "set-htpasswd" "$message"
+}
+
+firewall_apply() {
+	config_load_values
+	command -v uci >/dev/null 2>&1 || fail "uci command missing"
+
+	if [ "$CFG_FIREWALL_ENABLED" -eq 1 ]; then
+		uci -q delete firewall.nora >/dev/null 2>&1
+		uci set firewall.nora=rule || fail "failed to create firewall section"
+		uci set firewall.nora.name='Allow-Nora' || fail "failed to set firewall name"
+		uci set firewall.nora.src="$CFG_FIREWALL_SRC" || fail "failed to set firewall src"
+		uci set firewall.nora.proto='tcp' || fail "failed to set firewall proto"
+		uci set firewall.nora.dest_port="$CFG_PORT" || fail "failed to set firewall port"
+		uci set firewall.nora.target='ACCEPT' || fail "failed to set firewall target"
+		uci commit firewall || fail "failed to commit firewall"
+	else
+		uci -q delete firewall.nora >/dev/null 2>&1
+		uci commit firewall || fail "failed to commit firewall"
+	fi
+
+	if [ -x /etc/init.d/firewall ]; then
+		/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || fail "failed to reload firewall"
+	fi
+
+	ok_message "firewall-apply" "firewall updated"
+}
+
+detect_running() {
+	local binary="$1"
+
+	if [ -x "$SERVICE_SCRIPT" ] && "$SERVICE_SCRIPT" running >/dev/null 2>&1; then
+		return 0
+	fi
+	if command -v pidof >/dev/null 2>&1 && pidof nora >/dev/null 2>&1; then
+		return 0
+	fi
+	if command -v pgrep >/dev/null 2>&1 && pgrep -f -x "$binary" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
+collect_status() {
+	local binary config_path installed running htpasswd_present detected_version
+	config_load_values
+	binary="$CFG_INSTALL_DIR/bin/nora"
+	config_path="$CFG_INSTALL_DIR/config/config.toml"
+	installed=0
+	running=0
+	htpasswd_present=0
+	[ -x "$binary" ] && installed=1
+	[ -s "$CFG_HTPASSWD_FILE" ] && htpasswd_present=1
+	if detect_running "$binary"; then
+		running=1
+	fi
+	if [ "$installed" -eq 1 ]; then
+		detected_version="$($binary --version 2>/dev/null || $binary version 2>/dev/null || true)"
+	fi
+
+	json_init
+	json_add_boolean success 1
+	json_add_boolean enabled "$CFG_ENABLED"
+	json_add_boolean installed "$installed"
+	json_add_boolean running "$running"
+	json_add_string install_dir "$CFG_INSTALL_DIR"
+	json_add_string version "$CFG_VERSION"
+	json_add_string architecture "$CFG_ARCHITECTURE"
+	json_add_string resolved_architecture "$CFG_RESOLVED_ARCH"
+	json_add_string binary "$binary"
+	json_add_string config_path "$config_path"
+	json_add_boolean config_present "$( [ -s "$config_path" ] && printf 1 || printf 0 )"
+	json_add_boolean auth_enabled "$CFG_AUTH_ENABLED"
+	json_add_boolean htpasswd_present "$htpasswd_present"
+	json_add_boolean npm_enabled "$CFG_NPM_ENABLED"
+	json_add_boolean firewall_enabled "$CFG_FIREWALL_ENABLED"
+	json_add_string firewall_src "$CFG_FIREWALL_SRC"
+	json_add_string public_url "$CFG_PUBLIC_URL"
+	json_add_string host "$CFG_HOST"
+	json_add_int port "$CFG_PORT"
+	json_add_string storage_path "$CFG_STORAGE_PATH"
+	json_add_string token_storage "$CFG_TOKEN_STORAGE"
+	json_add_string installed_version "$detected_version"
+	json_dump
+}
+
+usage() {
+	fail "usage: nora-control {status|install|upgrade|render-config|start|stop|restart|set-htpasswd|firewall-apply}"
+}
+
+main() {
+	case "$1" in
+		status)
+			collect_status
+			;;
+		install)
+			download_binary "${2:-latest}" "install"
+			;;
+		upgrade)
+			config_load_values
+			download_binary "$CFG_VERSION" "upgrade"
+			;;
+		render-config)
+			render_config
+			;;
+		start|stop|restart)
+			service_action "$1"
+			;;
+		set-htpasswd)
+			[ $# -eq 2 ] || fail "set-htpasswd requires one bcrypt htpasswd line"
+			set_htpasswd "$2"
+			;;
+		firewall-apply)
+			firewall_apply
+			;;
+		*)
+			usage
+			;;
+	esac
+}
+
+main "$@"

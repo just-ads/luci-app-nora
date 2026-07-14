@@ -1,3 +1,0 @@
-config main 'config'
-	option enabled '0'
-	option name 'OpenWrt'
