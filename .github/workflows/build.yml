@@ -2,6 +2,8 @@ name: Build OpenWrt package
 
 on:
   workflow_dispatch:
+  release:
+    types: [published]
 
 env:
   OPENWRT_VERSION: 23.05.5
@@ -92,9 +94,16 @@ jobs:
           mkdir -p artifacts
           find openwrt-sdk/bin/packages -type f -name "${PACKAGE_NAME}_*.ipk" -exec cp -v {} artifacts/ \;
 
-      - name: Upload ipk artifact
+      - name: Upload artifacts (CI)
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.PACKAGE_NAME }}-${{ matrix.arch }}-${{ env.OPENWRT_VERSION }}
-          path: artifacts/${{ env.PACKAGE_NAME }}_*.ipk
+          name: ${{ env.PACKAGE_NAME }}-${{ matrix.arch }}
+          path: artifacts/
           if-no-files-found: error
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
