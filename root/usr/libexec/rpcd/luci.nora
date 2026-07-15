@@ -16,11 +16,8 @@ list_methods() {
 	"upload_binary": {
 		"path": "String"
 	},
-	"render_config": {},
+	"render_nora_config": {},
 	"read_nora_config": {},
-	"write_nora_config": {
-		"content": "String"
-	},
 	"save_settings": {
 		"section": "String",
 		"settings": "String"
@@ -74,16 +71,11 @@ handle_call() {
 			json_get_var path path
 			call_control upload-binary "$path"
 			;;
-		render_config)
-			call_control render-config
+		render_nora_config)
+			call_control render-nora-config
 			;;
 		read_nora_config)
 			call_control read-nora-config
-			;;
-		write_nora_config)
-			local content
-			json_get_var content content
-			call_control write-nora-config "$content"
 			;;
 		save_settings)
 			local section settings_json

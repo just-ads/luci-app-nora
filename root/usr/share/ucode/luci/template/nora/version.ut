@@ -87,7 +87,14 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	bindBtn('nora-btn-refresh', '{{ _("Refresh status") }}', '{{ _("Refreshing...") }}', function() { return callStatus(); });
 	bindBtn('nora-btn-upload', '{{ _("Upload Nora binary") }}', '{{ _("Uploading...") }}', function(ev) {
 		var p = '/tmp/nora-upload-' + Date.now();
-		return ui.uploadFile(p, ev && ev.target).then(function() { return callUploadBinary(p); });
+		return ui.uploadFile(p, ev && ev.target, '{{ _("If this upload fails with Error: 0, the LuCI/uhttpd request size limit likely rejected the binary before Nora received it.") }}')
+			.catch(function(e) {
+				var msg = String(e || '');
+				if (msg.indexOf('Error: 0') >= 0 || msg.indexOf('No error information') >= 0)
+					throw new Error('{{ _("Upload failed before Nora received the file. The selected binary is likely larger than uhttpd main.max_request_size. Increase that limit, restart uhttpd, then retry; or upload the file to /tmp/nora-upload-* by SCP and run nora-control upload-binary <path>.") }}');
+				throw e;
+			})
+			.then(function() { return callUploadBinary(p); });
 	});
 
 	document.getElementById('nora-btn-save-version').addEventListener('click', function() {

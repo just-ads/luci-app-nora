@@ -13,7 +13,7 @@ start_service() {
 
 	config_load nora
 	config_get install_dir config install_dir '/opt/nora'
-	/usr/libexec/nora-control render-config >/dev/null || return 1
+	/usr/libexec/nora-control render-nora-config >/dev/null || return 1
 
 	procd_open_instance
 	procd_set_param env NORA_CONFIG_PATH="$install_dir/config/config.toml"

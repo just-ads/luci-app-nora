@@ -60,7 +60,7 @@ document.getElementById('nora-r-skeleton').style.display = '';
 Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var rpc = mods[0], ui = mods[1];
 	var callSaveSettings = rpc.declare({ object: 'luci.nora', method: 'save_settings', params: [ 'section', 'settings' ], expect: { '': {} } });
-	var callReadNoraConfig = rpc.declare({ object: 'luci.nora', method: 'read_nora_config', expect: { '': {} } });
+	var callReadUciConfig = rpc.declare({ object: 'luci.nora', method: 'read_uci_config', expect: { '': {} } });
 
 	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
 
@@ -77,7 +77,7 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		});
 	}
 
-	callReadNoraConfig().then(function(cfg) { fillForm(cfg.npm); }).catch(function() {});
+	callReadUciConfig().then(function(cfg) { fillForm(cfg.registry); }).catch(function() {});
 
 	document.getElementById('nora-btn-save-registry').addEventListener('click', function() {
 		var btn = this;

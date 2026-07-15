@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-nora
-PKG_VERSION:=1.0.1
+PKG_VERSION:=1.0.2
 PKG_RELEASE:=1
 
 LUCI_TITLE:=LuCI support for Nora private npm registry
@@ -19,16 +19,16 @@ default_htpasswd="$${IPKG_INSTROOT}/opt/nora/config/users.htpasswd"
 mkdir -p "$$(dirname "$${default_htpasswd}")" || exit 1
 if [ ! -e "$${default_htpasswd}" ]; then
 	umask 077
-	printf '%s\n' 'admin:$2y$05$hSaqV85sGAQOXFRHx/CB0.wKjECPR/Yk70YdDVdw/g0LiEfPVmRSK' > "$${default_htpasswd}" || exit 1
+	printf '%s\n' 'admin:$$2y$$05$$hSaqV85sGAQOXFRHx/CB0.wKjECPR/Yk70YdDVdw/g0LiEfPVmRSK' > "$${default_htpasswd}" || exit 1
 fi
 chmod 0600 "$${default_htpasswd}" >/dev/null 2>&1 || true
 
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	if [ -x /usr/libexec/nora-control ]; then
-		/usr/libexec/nora-control render-config >/dev/null 2>&1 || true
+		render_output="$$(/usr/libexec/nora-control render-nora-config 2>&1)" || logger -t luci-app-nora "failed to render Nora config during postinst: $${render_output}"
 	fi
 	rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* >/dev/null 2>&1 || true
-	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+	/etc/init.d/rpcd reload >/dev/null 2>&1 || true
 fi
 
 exit 0
@@ -55,7 +55,7 @@ if [ "$${1:-remove}" != "upgrade" ]; then
 
 	if [ -z "$${IPKG_INSTROOT}" ]; then
 		rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* >/dev/null 2>&1 || true
-		/etc/init.d/rpcd restart >/dev/null 2>&1 || true
+		/etc/init.d/rpcd reload >/dev/null 2>&1 || true
 	fi
 fi
 

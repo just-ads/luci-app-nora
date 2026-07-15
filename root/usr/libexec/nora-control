@@ -101,8 +101,14 @@ validate_host() {
 }
 
 validate_url_or_empty() {
-	[ -z "$1" ] && return 0
-	printf '%s' "$1" | grep -Eq '^https?://[A-Za-z0-9._~:/?#\[\]@!$&()*+,;=%-]+$'
+	local url="$1"
+
+	[ -z "$url" ] && return 0
+	case "$url" in
+		http://*|https://*) ;;
+		*) return 1 ;;
+	esac
+	printf '%s' "$url" | grep -Eq '^[^[:space:]<>"]+$'
 }
 
 trim_value() {
@@ -310,7 +316,7 @@ ensure_directories() {
 	mkdir -p "$(dirname "$CFG_HTPASSWD_FILE")" || fail "failed to create htpasswd directory"
 }
 
-render_config() {
+render_nora_config() {
 	local output tmp public_line npm_proxy_line
 	config_load_values
 	ensure_directories
@@ -397,7 +403,7 @@ mode = "off"
 EOF
 	[ $? -eq 0 ] || fail "failed to write config"
 	mv -f "$tmp" "$output" || fail "failed to install config"
-	ok_message "render-config" "rendered $output"
+	ok_message "render-nora-config" "rendered $output"
 }
 
 read_nora_config() {
@@ -456,21 +462,6 @@ read_nora_config() {
 	json_close_object
 
 	json_dump
-}
-
-write_nora_config() {
-	local content="$1"
-	local config_path tmp
-
-	config_load_path_values
-	config_path="$CFG_INSTALL_DIR/config/config.toml"
-	tmp="$config_path.tmp.$$"
-	mkdir -p "$CFG_INSTALL_DIR/config" || fail "failed to create config directory"
-
-	umask 077
-	printf '%s\n' "$content" > "$tmp" || fail "failed to write temporary Nora config"
-	mv -f "$tmp" "$config_path" || fail "failed to save Nora config"
-	ok_message "write-nora-config" "saved $config_path"
 }
 
 save_settings() {
@@ -589,7 +580,7 @@ save_settings() {
 			;;
 	esac
 
-	[ "$changed" -eq 1 ] && { commit_uci_config; render_config >/dev/null 2>&1 || true; }
+	[ "$changed" -eq 1 ] && { commit_uci_config; render_nora_config >/dev/null 2>&1 || fail "settings saved but failed to render Nora config"; }
 	ok_message "save-settings" "settings saved"
 }
 
@@ -695,7 +686,7 @@ service_action() {
 				uci set "$UCI_CONFIG.$UCI_SECTION.enabled=1" >/dev/null 2>&1 || fail "failed to enable service"
 				uci commit "$UCI_CONFIG" >/dev/null 2>&1 || fail "failed to save enabled state"
 			fi
-			render_config >/dev/null 2>&1 || fail "failed to render Nora config before start"
+			render_nora_config >/dev/null 2>&1 || fail "failed to render Nora config before start"
 			;;
 	esac
 
@@ -844,11 +835,24 @@ read_uci_config() {
 	json_add_string token_storage "$CFG_TOKEN_STORAGE"
 	json_close_object
 
+	json_add_object registry
+	json_add_boolean npm_enabled "$CFG_NPM_ENABLED"
+	json_add_string npm_proxy "$CFG_NPM_PROXY"
+	json_add_int npm_proxy_timeout "$CFG_NPM_PROXY_TIMEOUT"
+	json_add_int npm_metadata_ttl "$CFG_NPM_METADATA_TTL"
+	json_add_string storage_path "$CFG_STORAGE_PATH"
+	json_close_object
+
+	json_add_object version
+	json_add_string version "$CFG_VERSION"
+	json_add_string architecture "$CFG_ARCHITECTURE"
+	json_close_object
+
 	json_dump
 }
 
 usage() {
-	fail "usage: nora-control {status|read-uci-config|install|upgrade|upload-binary|render-config|read-nora-config|write-nora-config|save-settings|start|stop|restart|set-htpasswd|firewall-apply}"
+	fail "usage: nora-control {status|read-uci-config|install|upgrade|upload-binary|render-nora-config|read-nora-config|save-settings|start|stop|restart|set-htpasswd|firewall-apply}"
 }
 
 main() {
@@ -869,15 +873,11 @@ main() {
 			[ $# -eq 2 ] || fail "upload-binary requires uploaded file path"
 			upload_binary "$2"
 			;;
-		render-config)
-			render_config
+		render-nora-config|render-config)
+			render_nora_config
 			;;
 		read-nora-config)
 			read_nora_config
-			;;
-		write-nora-config)
-			[ $# -eq 2 ] || fail "write-nora-config requires config content"
-			write_nora_config "$2"
 			;;
 		save-settings)
 			[ $# -eq 2 ] || fail "save-settings requires section name (global|auth|registry|version)"

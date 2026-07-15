@@ -9,10 +9,9 @@
 			<h2>{{ _("Nora") }}</h2>
 			<div class="nora-card">
 				<h3>{{ _("Configuration management") }}</h3>
-				<textarea id="nora-generated-config" class="cbi-input-textarea nora-config-editor" spellcheck="false" placeholder="# config.toml"></textarea>
+				<textarea id="nora-generated-config" class="cbi-input-textarea nora-config-editor" spellcheck="false" readonly placeholder="# config.toml"></textarea>
 				<div class="nora-actions">
-				<button class="btn cbi-button cbi-button-neutral" type="button" id="nora-btn-load" disabled>{{ _("Load Nora config") }}</button>
-				<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-save" disabled>{{ _("Save Nora config") }}</button>
+				<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-render" disabled>{{ _("Render config") }}</button>
 				</div>
 			</div>
 		</div>
@@ -30,7 +29,7 @@ document.getElementById('nora-cm-skeleton').style.display = '';
 Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var rpc = mods[0], ui = mods[1];
 	var callReadNoraConfig = rpc.declare({ object: 'luci.nora', method: 'read_nora_config', expect: { '': {} } });
-	var callWriteNoraConfig = rpc.declare({ object: 'luci.nora', method: 'write_nora_config', params: [ 'content' ], expect: { '': {} } });
+	var callRenderNoraConfig = rpc.declare({ object: 'luci.nora', method: 'render_nora_config', expect: { '': {} } });
 
 	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
 
@@ -49,11 +48,16 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 
 	var editor = document.getElementById('nora-generated-config');
 
-	bindBtn('nora-btn-load', '{{ _("Load Nora config") }}', '{{ _("Loading...") }}', function() {
+	function loadConfig() {
 		return callReadNoraConfig().then(function(r) { editor.value = (r && r.content) || ''; return r; });
+	}
+
+	bindBtn('nora-btn-render', '{{ _("Render config") }}', '{{ _("Rendering...") }}', function() {
+		return callRenderNoraConfig().then(function(r) {
+			return loadConfig().then(function() { return r; });
+		});
 	});
-	bindBtn('nora-btn-save', '{{ _("Save Nora config") }}', '{{ _("Saving...") }}', function() {
-		return callWriteNoraConfig(editor.value || '');
-	});
+
+	loadConfig().catch(function(e) { notify(String(e), 'danger'); });
 });
 </script>

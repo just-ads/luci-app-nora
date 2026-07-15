@@ -8,9 +8,13 @@
 			}
 		},
 		"write": {
+			"cgi-io": [ "upload" ],
+			"file": {
+				"/tmp/nora-upload-*": [ "write" ]
+			},
 			"uci": [ "nora" ],
 			"ubus": {
-				"luci.nora": [ "install", "upgrade", "upload_binary", "render_config", "write_nora_config", "save_settings", "start", "stop", "restart", "set_htpasswd", "firewall_apply" ]
+				"luci.nora": [ "install", "upgrade", "upload_binary", "render_nora_config", "save_settings", "start", "stop", "restart", "set_htpasswd", "firewall_apply" ]
 			}
 		}
 	}
