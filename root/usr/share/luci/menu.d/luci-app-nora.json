@@ -3,12 +3,58 @@
 		"title": "Nora",
 		"order": 90,
 		"action": {
-			"type": "view",
-			"path": "nora"
+			"type": "firstchild"
 		},
 		"depends": {
 			"acl": [ "luci-app-nora" ],
 			"uci": { "nora": true }
+		}
+	},
+	"admin/services/nora/status": {
+		"title": "Running Status",
+		"order": 10,
+		"action": {
+			"type": "template",
+			"path": "nora/status"
+		}
+	},
+	"admin/services/nora/plugin": {
+		"title": "Plugin Settings",
+		"order": 20,
+		"action": {
+			"type": "template",
+			"path": "nora/plugin"
+		}
+	},
+	"admin/services/nora/config": {
+		"title": "Nora Configuration",
+		"order": 30,
+		"action": {
+			"type": "firstchild"
+		}
+	},
+	"admin/services/nora/config/registries": {
+		"title": "Registries",
+		"order": 10,
+		"action": {
+			"type": "template",
+			"path": "nora/registries"
+		}
+	},
+	"admin/services/nora/config/config_management": {
+		"title": "Configuration management",
+		"order": 20,
+		"action": {
+			"type": "template",
+			"path": "nora/config_management"
+		}
+	},
+	"admin/services/nora/version": {
+		"title": "Version Update",
+		"order": 40,
+		"action": {
+			"type": "template",
+			"path": "nora/version"
 		}
 	}
 }

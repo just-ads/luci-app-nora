@@ -1,0 +1,95 @@
+{% include('header') %}
+
+<link id="nora-ui-style" rel="stylesheet" href="{{ resource }}/nora/css/nora.css?v={{ pkgs_update_time }}">
+
+<div id="nora-registries-view" class="nora-template-view">
+	<div id="nora-r-spinner" class="spinning">{{ _('Loading Nora…') }}</div>
+	<div id="nora-r-skeleton" style="display:none">
+		<form id="nora-r-form">
+			<h3>{{ _("npm registry settings") }}</h3>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-npm_enabled">{{ _("Enable npm registry") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-npm_enabled" type="checkbox" name="cbid.nora.config.npm_enabled" checked>
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-npm_proxy">{{ _("Upstream proxy") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-npm_proxy" type="text" class="cbi-input-text" name="cbid.nora.config.npm_proxy" placeholder="https://registry.npmjs.org">
+				</div>
+				<div class="cbi-value-description">{{ _("Leave this empty for private packages only.") }}</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-npm_proxy_timeout">{{ _("Proxy timeout (seconds)") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-npm_proxy_timeout" type="text" class="cbi-input-text" name="cbid.nora.config.npm_proxy_timeout">
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-npm_metadata_ttl">{{ _("Metadata TTL (seconds)") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-npm_metadata_ttl" type="text" class="cbi-input-text" name="cbid.nora.config.npm_metadata_ttl">
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-storage_path">{{ _("Storage path") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-storage_path" type="text" class="cbi-input-text" name="cbid.nora.config.storage_path">
+				</div>
+			</div>
+
+			<button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-registry">{{ _("Save & Apply") }}</button>
+		</form>
+	</div>
+</div>
+
+{% include('footer') %}
+
+<script>
+'use strict';
+
+document.getElementById('nora-r-spinner').style.display = 'none';
+document.getElementById('nora-r-skeleton').style.display = '';
+
+Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
+	var rpc = mods[0], ui = mods[1];
+	var callSaveSettings = rpc.declare({ object: 'luci.nora', method: 'save_settings', params: [ 'section', 'settings' ], expect: { '': {} } });
+	var callReadNoraConfig = rpc.declare({ object: 'luci.nora', method: 'read_nora_config', expect: { '': {} } });
+
+	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
+
+	var REG_KEYS = ['npm_enabled','npm_proxy','npm_proxy_timeout','npm_metadata_ttl','storage_path'];
+
+	function fillForm(section) {
+		Object.keys(section).forEach(function(key) {
+			var el = document.querySelector('#nora-r-form [name="cbid.nora.config.' + key + '"]');
+			if (!el) return;
+			if (el.type === 'checkbox')
+				el.checked = !!section[key];
+			else
+				el.value = section[key] != null ? String(section[key]) : '';
+		});
+	}
+
+	callReadNoraConfig().then(function(cfg) { fillForm(cfg.npm); }).catch(function() {});
+
+	document.getElementById('nora-btn-save-registry').addEventListener('click', function() {
+		var btn = this;
+		btn.disabled = true; btn.textContent = '{{ _("Saving...") }}';
+		var fd = new FormData(document.getElementById('nora-r-form'));
+		var obj = {};
+		REG_KEYS.forEach(function(k) { obj[k] = fd.get('cbid.nora.config.' + k) || ''; });
+		callSaveSettings('registry', JSON.stringify(obj))
+			.then(function(r) { notify((r && (r.message || r.error)) || '{{ _("Save & Apply") }}'); })
+			.catch(function(e) { notify(String(e), 'danger'); })
+			.finally(function() { btn.disabled = false; btn.textContent = '{{ _("Save & Apply") }}'; });
+	});
+
+});
+</script>

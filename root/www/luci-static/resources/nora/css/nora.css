@@ -1,0 +1,148 @@
+.nora-tabs {
+	display: flex;
+	gap: .5rem;
+	overflow-x: auto;
+	padding-bottom: .25rem;
+	margin: 0 0 1rem 0;
+	scrollbar-width: thin;
+}
+
+.nora-subtabs {
+	display: flex;
+	gap: .5rem;
+	overflow-x: auto;
+	padding-bottom: .25rem;
+	margin: 0 0 .75rem 0;
+	scrollbar-width: thin;
+}
+
+.nora-tab-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 44px;
+	padding: .625rem 1rem;
+	border: 1px solid var(--border-color-medium, #c9d0d6);
+	border-radius: 6px;
+	background: var(--background-color-primary, #fff);
+	color: inherit;
+	cursor: pointer;
+	white-space: nowrap;
+	text-decoration: none;
+}
+
+.nora-tab-btn:hover {
+	border-color: var(--primary, #4a90e2);
+}
+
+.nora-tab-btn:focus,
+.nora-tab-btn:focus-visible {
+	border-color: var(--primary, #4a90e2);
+	box-shadow: 0 0 0 2px var(--primary, #4a90e2);
+}
+
+.nora-tab-btn[aria-selected="true"] {
+	border-color: var(--primary, #4a90e2);
+	font-weight: 600;
+}
+
+.nora-panel[hidden] {
+	display: none !important;
+}
+
+.nora-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 1rem;
+}
+
+.nora-card {
+	border: 1px solid var(--border-color-medium, #c9d0d6);
+	border-radius: 8px;
+	background: var(--background-color-primary, #fff);
+	padding: 1rem;
+}
+
+.nora-card h3,
+.nora-card h4 {
+	margin: 0 0 .5rem 0;
+}
+
+.nora-value {
+	font-size: 1.125rem;
+	font-weight: 600;
+	word-break: break-word;
+}
+
+.nora-meta {
+	color: var(--text-color-secondary, #666);
+	margin-top: .375rem;
+}
+
+.nora-status-ok {
+	color: #2d7d46;
+}
+
+.nora-status-warn {
+	color: #b06a00;
+}
+
+.nora-status-stop {
+	color: #b03030;
+}
+
+.nora-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .75rem;
+	align-items: center;
+}
+
+.nora-actions .btn {
+	min-height: 20px;
+}
+
+.nora-note {
+	margin: .5rem 0 1rem 0;
+	color: var(--text-color-secondary, #666);
+}
+
+.nora-inline-field {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .75rem;
+	align-items: flex-end;
+}
+
+.nora-inline-field .cbi-input-text {
+	min-height: 20px;
+}
+
+.nora-section-stack {
+	display: grid;
+	gap: 1rem;
+}
+
+.nora-config-editor {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 26rem;
+	margin-bottom: 1rem;
+	font-family: ui-monospace, SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+	white-space: pre;
+}
+
+.nora-map-footer {
+	margin-top: 1rem;
+}
+
+@media (max-width: 640px) {
+	.nora-inline-field {
+		align-items: stretch;
+	}
+
+	.nora-inline-field .cbi-input-text,
+	.nora-inline-field .btn {
+		width: 100%;
+	}
+}

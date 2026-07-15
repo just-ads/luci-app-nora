@@ -1,0 +1,59 @@
+{% include('header') %}
+
+<link id="nora-ui-style" rel="stylesheet" href="{{ resource }}/nora/css/nora.css?v={{ pkgs_update_time }}">
+
+<div id="nora-config-management-view" class="nora-template-view">
+	<div id="nora-cm-spinner" class="spinning">{{ _('Loading Nora…') }}</div>
+	<div id="nora-cm-skeleton" style="display:none">
+		<div class="cbi-map">
+			<h2>{{ _("Nora") }}</h2>
+			<div class="nora-card">
+				<h3>{{ _("Configuration management") }}</h3>
+				<textarea id="nora-generated-config" class="cbi-input-textarea nora-config-editor" spellcheck="false" placeholder="# config.toml"></textarea>
+				<div class="nora-actions">
+				<button class="btn cbi-button cbi-button-neutral" type="button" id="nora-btn-load" disabled>{{ _("Load Nora config") }}</button>
+				<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-save" disabled>{{ _("Save Nora config") }}</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+{% include('footer') %}
+
+<script>
+'use strict';
+
+document.getElementById('nora-cm-spinner').style.display = 'none';
+document.getElementById('nora-cm-skeleton').style.display = '';
+
+Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
+	var rpc = mods[0], ui = mods[1];
+	var callReadNoraConfig = rpc.declare({ object: 'luci.nora', method: 'read_nora_config', expect: { '': {} } });
+	var callWriteNoraConfig = rpc.declare({ object: 'luci.nora', method: 'write_nora_config', params: [ 'content' ], expect: { '': {} } });
+
+	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
+
+	function bindBtn(id, label, busy, handler) {
+		var btn = document.getElementById(id);
+		if (!btn) return;
+		btn.disabled = false;
+		btn.addEventListener('click', function() {
+			btn.disabled = true; btn.textContent = busy;
+			Promise.resolve(handler()).then(function(r) {
+				notify((r && (r.message || r.error)) || label);
+			}).catch(function(e) { notify(String(e), 'danger'); })
+			.finally(function() { btn.disabled = false; btn.textContent = label; });
+		});
+	}
+
+	var editor = document.getElementById('nora-generated-config');
+
+	bindBtn('nora-btn-load', '{{ _("Load Nora config") }}', '{{ _("Loading...") }}', function() {
+		return callReadNoraConfig().then(function(r) { editor.value = (r && r.content) || ''; return r; });
+	});
+	bindBtn('nora-btn-save', '{{ _("Save Nora config") }}', '{{ _("Saving...") }}', function() {
+		return callWriteNoraConfig(editor.value || '');
+	});
+});
+</script>

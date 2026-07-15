@@ -1,0 +1,175 @@
+{% include('header') %}
+
+<link id="nora-ui-style" rel="stylesheet" href="{{ resource }}/nora/css/nora.css?v={{ pkgs_update_time }}">
+
+<div id="nora-plugin-view" class="nora-template-view">
+	<div id="nora-p-spinner" class="spinning">{{ _('Loading Nora…') }}</div>
+	<div id="nora-p-skeleton" style="display:none">
+		<h2>{{ _("Nora") }}</h2>
+
+		<form id="nora-p-form-global">
+			<h3>{{ _("Global service settings") }}</h3>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-enabled">{{ _("Enable service") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-enabled" type="checkbox" name="cbid.nora.config.enabled">
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-install_dir">{{ _("Install directory") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-install_dir" type="text" class="cbi-input-text" name="cbid.nora.config.install_dir">
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-host">{{ _("Host") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-host" type="text" class="cbi-input-text" name="cbid.nora.config.host">
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-port">{{ _("Port") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-port" type="text" class="cbi-input-text" name="cbid.nora.config.port">
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-public_url">{{ _("Public URL") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-public_url" type="text" class="cbi-input-text" name="cbid.nora.config.public_url" placeholder="https://registry.example.com">
+				</div>
+				<div class="cbi-value-description">{{ _("When host is 0.0.0.0 and this is empty, Nora uses the OpenWrt LAN IP address as the default public URL.") }}</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-allow_wan_access">{{ _("Allow WAN access") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-allow_wan_access" type="checkbox" name="cbid.nora.config.allow_wan_access">
+				</div>
+				<div class="cbi-value-description">{{ _("When enabled, Nora opens its port on the firewall WAN zone. When disabled, Nora removes only its own firewall rule.") }}</div>
+			</div>
+
+			<button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-global">{{ _("Save & Apply") }}</button>
+		</form>
+
+		<form id="nora-p-form-auth">
+			<h3>{{ _("Authentication settings") }}</h3>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-auth_enabled">{{ _("Enable authentication") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-auth_enabled" type="checkbox" name="cbid.nora.config.auth_enabled" checked>
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-anonymous_read">{{ _("Allow anonymous read") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-anonymous_read" type="checkbox" name="cbid.nora.config.anonymous_read">
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-htpasswd_file">{{ _("htpasswd file") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-htpasswd_file" type="text" class="cbi-input-text" name="cbid.nora.config.htpasswd_file">
+				</div>
+			</div>
+
+			<div class="cbi-value">
+				<label class="cbi-value-title" for="cfg-token_storage">{{ _("Token storage") }}</label>
+				<div class="cbi-value-field">
+					<input id="cfg-token_storage" type="text" class="cbi-input-text" name="cbid.nora.config.token_storage">
+				</div>
+			</div>
+
+			<button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-auth">{{ _("Save & Apply") }}</button>
+		</form>
+
+		<div class="cbi-value nora-htpasswd-row" id="nora-htpasswd-row">
+			<p class="nora-note nora-status-warn">{{ _("Default username and password are admin / admin. Replace the default credential immediately after first login.") }}</p>
+			<div class="cbi-value">
+    			<label class="cbi-value-title" for="nora-htpasswd-line">{{ _("bcrypt htpasswd line") }}</label>
+    			<div class="cbi-value-field nora-inline-field">
+    				<input id="nora-htpasswd-line" class="cbi-input-text" type="password" autocomplete="new-password" placeholder="user:$2b$12$...">
+    				<button type="button" class="btn cbi-button cbi-button-action" id="nora-btn-upload-htpasswd">{{ _("Upload htpasswd") }}</button>
+    			</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+{% include('footer') %}
+
+<script>
+'use strict';
+
+document.getElementById('nora-p-spinner').style.display = 'none';
+document.getElementById('nora-p-skeleton').style.display = '';
+
+Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
+	var rpc = mods[0], ui = mods[1];
+	var callSetHtpasswd = rpc.declare({ object: 'luci.nora', method: 'set_htpasswd', params: [ 'line' ], expect: { '': {} } });
+	var callSaveSettings = rpc.declare({ object: 'luci.nora', method: 'save_settings', params: [ 'section', 'settings' ], expect: { '': {} } });
+	var callReadUciConfig = rpc.declare({ object: 'luci.nora', method: 'read_uci_config', expect: { '': {} } });
+
+	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
+
+	var GLOBAL_KEYS = ['enabled','install_dir','host','port','public_url','allow_wan_access'];
+	var AUTH_KEYS = ['auth_enabled','anonymous_read','htpasswd_file','token_storage'];
+
+	function collectSection(formId, keys) {
+		var fd = new FormData(document.getElementById(formId));
+		var obj = {};
+		keys.forEach(function(k) { obj[k] = fd.get('cbid.nora.config.' + k) || ''; });
+		return obj;
+	}
+
+	function bindSaveBtn(btnId, section, formId, keys) {
+		var btn = document.getElementById(btnId);
+		if (!btn) return;
+		btn.addEventListener('click', function() {
+			btn.disabled = true; btn.textContent = '{{ _("Saving...") }}';
+			callSaveSettings(section, JSON.stringify(collectSection(formId, keys)))
+				.then(function(r) { notify((r && (r.message || r.error)) || '{{ _("Save & Apply") }}'); })
+				.catch(function(e) { notify(String(e), 'danger'); })
+				.finally(function() { btn.disabled = false; btn.textContent = '{{ _("Save & Apply") }}'; });
+		});
+	}
+
+	bindSaveBtn('nora-btn-save-global', 'global', 'nora-p-form-global', GLOBAL_KEYS);
+	bindSaveBtn('nora-btn-save-auth', 'auth', 'nora-p-form-auth', AUTH_KEYS);
+
+	function fillForm(formId, section) {
+		Object.keys(section).forEach(function(key) {
+			var el = document.querySelector('#' + formId + ' [name="cbid.nora.config.' + key + '"]');
+			if (!el) return;
+			if (el.type === 'checkbox')
+				el.checked = !!section[key];
+			else
+				el.value = section[key] != null ? String(section[key]) : '';
+		});
+	}
+
+	callReadUciConfig().then(function(cfg) {
+		fillForm('nora-p-form-global', cfg.global);
+		fillForm('nora-p-form-auth', cfg.auth);
+	});
+
+	document.getElementById('nora-btn-upload-htpasswd').addEventListener('click', function() {
+		var btn = this, input = document.getElementById('nora-htpasswd-line');
+		var line = input ? input.value || '' : '';
+		btn.disabled = true; btn.textContent = '{{ _("Uploading...") }}';
+		callSetHtpasswd(line).then(function(r) {
+			if (input) input.value = '';
+			notify((r && (r.message || r.error)) || '{{ _("Upload htpasswd") }}');
+		}).catch(function(e) { notify(String(e), 'danger'); })
+		.finally(function() { btn.disabled = false; btn.textContent = '{{ _("Upload htpasswd") }}'; });
+	});
+});
+</script>

@@ -1,0 +1,106 @@
+{% include('header') %}
+
+<link id="nora-ui-style" rel="stylesheet" href="{{ resource }}/nora/css/nora.css?v={{ pkgs_update_time }}">
+
+<div id="nora-status-view" class="nora-template-view">
+	<div id="nora-status-spinner" class="spinning">{{ _('Loading Nora…') }}</div>
+	<div id="nora-status-skeleton" style="display:none">
+		<div class="cbi-map">
+			<div class="nora-section-stack">
+				<div class="nora-grid">
+					<div class="nora-card"><h3>{{ _("Service status") }}</h3><div class="nora-value" id="nora-s-status">-</div></div>
+					<div class="nora-card"><h3>{{ _("Current version") }}</h3><div class="nora-value" id="nora-s-version">-<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-install-inline" style="display:none">{{ _("Install") }}</button></div></div>
+					<div class="nora-card"><h3>{{ _("Service enabled state") }}</h3><div class="nora-value" id="nora-s-enabled">-</div></div>
+					<div class="nora-card"><h3>{{ _("Authentication state") }}</h3><div class="nora-value" id="nora-s-auth">-</div></div>
+				</div>
+				<div class="nora-card">
+					<h3>{{ _("Service actions") }}</h3>
+					<div class="nora-actions">
+						<button class="btn cbi-button cbi-button-neutral" type="button" id="nora-btn-refresh" disabled>{{ _("Refresh status") }}</button>
+						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-install" style="display:none">{{ _("Install") }}</button>
+						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-start" style="display:none">{{ _("Start") }}</button>
+						<button class="btn cbi-button cbi-button-negative" type="button" id="nora-btn-stop" style="display:none">{{ _("Stop") }}</button>
+						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-restart" style="display:none">{{ _("Restart") }}</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+{% include('footer') %}
+
+<script>
+'use strict';
+
+document.getElementById('nora-status-spinner').style.display = 'none';
+document.getElementById('nora-status-skeleton').style.display = '';
+
+Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
+	var rpc = mods[0], ui = mods[1];
+	var callStatus = rpc.declare({ object: 'luci.nora', method: 'status', expect: { '': {} } });
+	var callInstall = rpc.declare({ object: 'luci.nora', method: 'install', params: [ 'version' ], expect: { '': {} } });
+	var callStart = rpc.declare({ object: 'luci.nora', method: 'start', expect: { '': {} } });
+	var callStop = rpc.declare({ object: 'luci.nora', method: 'stop', expect: { '': {} } });
+	var callRestart = rpc.declare({ object: 'luci.nora', method: 'restart', expect: { '': {} } });
+
+	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
+	function sc(kind) { return kind === 'ok' ? 'nora-status-ok' : kind === 'warn' ? 'nora-status-warn' : 'nora-status-stop'; }
+
+	function bindBtn(id, label, busy, handler) {
+		var btn = document.getElementById(id);
+		if (!btn) return;
+		btn.disabled = false;
+		btn.addEventListener('click', function() {
+			btn.disabled = true; btn.textContent = busy;
+			Promise.resolve(handler()).then(function(r) {
+				notify((r && (r.message || r.error || r.detected_version || r.version)) || label);
+				return render();
+			}).catch(function(e) { notify(String(e), 'danger'); })
+			.finally(function() { btn.disabled = false; btn.textContent = label; });
+		});
+	}
+
+	bindBtn('nora-btn-refresh', '{{ _("Refresh status") }}', '{{ _("Refreshing...") }}', callStatus);
+	bindBtn('nora-btn-install', '{{ _("Install") }}', '{{ _("Installing...") }}', function() { return callInstall('latest'); });
+	bindBtn('nora-btn-install-inline', '{{ _("Install") }}', '{{ _("Installing...") }}', function() { return callInstall('latest'); });
+	bindBtn('nora-btn-start', '{{ _("Start") }}', '{{ _("Starting...") }}', callStart);
+	bindBtn('nora-btn-stop', '{{ _("Stop") }}', '{{ _("Stopping...") }}', callStop);
+	bindBtn('nora-btn-restart', '{{ _("Restart") }}', '{{ _("Restarting...") }}', callRestart);
+
+	function render() {
+		return L.resolveDefault(callStatus(), {}).then(function(s) {
+			var running = !!s.running, installed = !!s.installed, enabled = !!s.enabled;
+			var authEnabled = !!s.auth_enabled;
+			var elS = document.getElementById('nora-s-status');
+			elS.textContent = running ? '{{ _("Running") }}' : '{{ _("Stopped") }}';
+			elS.className = 'nora-value ' + sc(running ? 'ok' : 'stop');
+
+		var elV = document.getElementById('nora-s-version');
+		var ib = document.getElementById('nora-btn-install-inline');
+		if (installed) {
+			elV.textContent = s.installed_version || '{{ _("Detected but version string is unavailable") }}';
+			if (ib) ib.style.display = 'none';
+		} else {
+			elV.textContent = '';
+			if (ib) ib.style.display = '';
+		}
+
+			var elE = document.getElementById('nora-s-enabled');
+			elE.textContent = enabled ? '{{ _("Enabled") }}' : '{{ _("Disabled") }}';
+			elE.className = 'nora-value ' + sc(enabled ? 'ok' : 'warn');
+
+			var elA = document.getElementById('nora-s-auth');
+			elA.textContent = authEnabled ? (s.htpasswd_present ? '{{ _("Enabled with htpasswd") }}' : '{{ _("Enabled, waiting for htpasswd") }}') : '{{ _("Disabled") }}';
+			elA.className = 'nora-value ' + sc(authEnabled ? (s.htpasswd_present ? 'ok' : 'warn') : 'warn');
+
+			document.getElementById('nora-btn-install').style.display = installed ? 'none' : '';
+			document.getElementById('nora-btn-start').style.display = (installed && !running) ? '' : 'none';
+			document.getElementById('nora-btn-stop').style.display = (installed && running) ? '' : 'none';
+			document.getElementById('nora-btn-restart').style.display = (installed && running) ? '' : 'none';
+		});
+	}
+
+	render();
+});
+</script>

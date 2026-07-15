@@ -4,9 +4,6 @@ msgstr "Content-Type: text/plain; charset=UTF-8"
 msgid "Nora"
 msgstr "Nora"
 
-msgid "Manage the Nora private npm registry on OpenWrt."
-msgstr "在 OpenWrt 上管理 Nora 私有 npm 仓库。"
-
 msgid "Global service settings"
 msgstr "全局服务设置"
 
@@ -15,12 +12,6 @@ msgstr "启用服务"
 
 msgid "Install directory"
 msgstr "安装目录"
-
-msgid "Target version"
-msgstr "目标版本"
-
-msgid "Use latest or a release such as v0.5.0."
-msgstr "可填写 latest 或类似 v0.5.0 的版本号。"
 
 msgid "Architecture"
 msgstr "架构"
@@ -37,8 +28,8 @@ msgstr "端口"
 msgid "Public URL"
 msgstr "公共 URL"
 
-msgid "Leave empty is allowed, but when host is 0.0.0.0 clients may receive unreachable URLs."
-msgstr "允许留空，但当 host 为 0.0.0.0 时，客户端可能收到不可达的 URL。"
+msgid "When host is 0.0.0.0 and this is empty, Nora uses the OpenWrt LAN IP address as the default public URL."
+msgstr "当 host 为 0.0.0.0 且此项留空时，Nora 会使用 OpenWrt LAN IP 地址作为默认公共 URL。"
 
 msgid "Authentication settings"
 msgstr "认证设置"
@@ -76,17 +67,11 @@ msgstr "元数据 TTL（秒）"
 msgid "Storage path"
 msgstr "存储路径"
 
-msgid "Firewall settings"
-msgstr "防火墙设置"
+msgid "Allow WAN access"
+msgstr "允许外网访问"
 
-msgid "Manage firewall rule"
-msgstr "管理防火墙规则"
-
-msgid "Source zone"
-msgstr "来源区域"
-
-msgid "Default is lan. When disabled, only the named firewall section nora is removed."
-msgstr "默认值为 lan。禁用时仅删除名为 nora 的防火墙 section。"
+msgid "When enabled, Nora opens its port on the firewall WAN zone. When disabled, Nora removes only its own firewall rule."
+msgstr "启用时，Nora 会在防火墙 WAN 区域放行自身端口。禁用时仅删除 Nora 自己的防火墙规则。"
 
 msgid "Enabled"
 msgstr "已启用"
@@ -100,11 +85,14 @@ msgstr "操作已完成"
 msgid "Loading..."
 msgstr "加载中..."
 
+msgid "Saving..."
+msgstr "保存中..."
+
+msgid "Save & Apply"
+msgstr "保存并应用"
+
 msgid "Service actions"
 msgstr "服务操作"
-
-msgid "Use these runtime controls after saving any related configuration changes."
-msgstr "请在保存相关配置变更后使用这些运行时控制。"
 
 msgid "Service status"
 msgstr "服务状态"
@@ -115,32 +103,14 @@ msgstr "运行中"
 msgid "Stopped"
 msgstr "已停止"
 
-msgid "Runtime state detected from the existing Nora service."
-msgstr "运行状态由当前 Nora 服务检测得出。"
-
-msgid "Install Nora before starting the service."
-msgstr "请先安装 Nora 再启动服务。"
-
 msgid "Current version"
 msgstr "当前版本"
 
 msgid "Detected but version string is unavailable"
 msgstr "已检测到，但版本字符串不可用"
 
-msgid "Detected from the installed Nora binary."
-msgstr "从已安装的 Nora 二进制中检测。"
-
-msgid "Current version: Install"
-msgstr "当前版本：安装"
-
 msgid "Service enabled state"
 msgstr "服务启用状态"
-
-msgid "The init service is configured to start automatically."
-msgstr "init 服务已配置为开机自动启动。"
-
-msgid "The init service is not enabled at boot."
-msgstr "init 服务未配置为开机启动。"
 
 msgid "Authentication state"
 msgstr "认证状态"
@@ -150,12 +120,6 @@ msgstr "已启用，且已有 htpasswd"
 
 msgid "Enabled, waiting for htpasswd"
 msgstr "已启用，等待上传 htpasswd"
-
-msgid "Anonymous read and token behavior are configured below."
-msgstr "匿名读取与 Token 行为可在下方配置。"
-
-msgid "Clients can access the registry without authentication."
-msgstr "客户端可无需认证访问仓库。"
 
 msgid "Refresh status"
 msgstr "刷新状态"
@@ -190,35 +154,17 @@ msgstr "已安装"
 msgid "Not installed"
 msgstr "未安装"
 
-msgid "Nora binary detected in the configured install directory."
-msgstr "已在配置的安装目录中检测到 Nora 二进制。"
-
-msgid "Install Nora to create the binary in the configured install directory."
-msgstr "安装 Nora 后会在配置的安装目录中创建二进制。"
-
 msgid "Current installed version"
 msgstr "当前已安装版本"
 
-msgid "Reported by the existing Nora binary."
-msgstr "由当前 Nora 二进制上报。"
-
-msgid "Target configured version"
-msgstr "配置的目标版本"
-
-msgid "This value is used for install or upgrade actions."
-msgstr "安装或升级操作将使用此值。"
+msgid "New version"
+msgstr "新版本"
 
 msgid "Resolved architecture"
 msgstr "解析后的架构"
 
-msgid "Resolved from the current device and configuration."
-msgstr "根据当前设备与配置解析得出。"
-
 msgid "Binary path"
 msgstr "二进制路径"
-
-msgid "The previous binary is backed up before replacement during install or upgrade."
-msgstr "安装或升级替换前会先备份旧二进制。"
 
 msgid "Install Nora"
 msgstr "安装 Nora"
@@ -226,17 +172,17 @@ msgstr "安装 Nora"
 msgid "Upgrade Nora"
 msgstr "升级 Nora"
 
-msgid "Upgrade uses the target configured version and replaces the current binary after creating a backup of the previous one."
-msgstr "升级将使用配置的目标版本，并在替换当前二进制前创建旧版本备份。"
-
-msgid "Install downloads the target configured version and prepares the Nora binary for first use."
-msgstr "安装会下载配置的目标版本，并为首次使用准备 Nora 二进制。"
-
 msgid "Upgrade"
 msgstr "升级"
 
 msgid "Install"
 msgstr "安装"
+
+msgid "Manual binary upload"
+msgstr "手动上传二进制文件"
+
+msgid "Upload Nora binary"
+msgstr "上传 Nora 二进制文件"
 
 msgid "Upgrading..."
 msgstr "升级中..."
@@ -253,11 +199,11 @@ msgstr "未知"
 msgid "Secure htpasswd upload"
 msgstr "安全 htpasswd 上传"
 
+msgid "Default username and password are admin / admin. Replace the default credential immediately after first login."
+msgstr "默认用户名和密码为 admin / admin。首次登录后请立即更换默认凭据。"
+
 msgid "bcrypt htpasswd line"
 msgstr "bcrypt htpasswd 行"
-
-msgid "This temporary bcrypt htpasswd input is sent directly to the existing RPC action, never stored in UCI, and is cleared after a successful upload."
-msgstr "此临时 bcrypt htpasswd 输入会直接发送到现有 RPC 操作，不会写入 UCI，且上传成功后会立即清空。"
 
 msgid "Upload htpasswd"
 msgstr "上传 htpasswd"
@@ -265,26 +211,8 @@ msgstr "上传 htpasswd"
 msgid "Uploading..."
 msgstr "上传中..."
 
-msgid "Only a single bcrypt htpasswd line is accepted. Plaintext and APR1 are rejected."
-msgstr "仅接受单行 bcrypt htpasswd，拒绝明文和 APR1。"
-
-msgid "Firewall actions"
-msgstr "防火墙操作"
-
-msgid "Apply the firewall rule after saving any firewall-related changes below."
-msgstr "请在保存下方防火墙相关变更后再应用防火墙规则。"
-
-msgid "Apply firewall"
-msgstr "应用防火墙"
-
 msgid "Applying..."
 msgstr "应用中..."
-
-msgid "Render configuration"
-msgstr "生成配置"
-
-msgid "Render the Nora configuration after saving updated settings when you want to refresh the generated config file immediately."
-msgstr "如需立即刷新生成的配置文件，请先保存更新后的设置再生成 Nora 配置。"
 
 msgid "Render config"
 msgstr "生成配置"
@@ -292,11 +220,14 @@ msgstr "生成配置"
 msgid "Rendering..."
 msgstr "生成中..."
 
-msgid "Save & Apply keeps the npm registry settings in UCI. This phase only exposes npm while leaving room for additional registries later."
-msgstr "保存并应用会将 npm 仓库设置保存在 UCI 中。当前阶段仅显示 npm，并为后续扩展更多仓库保留空间。"
+msgid "Configuration management"
+msgstr "配置管理"
 
-msgid "Save & Apply after editing service, authentication, or firewall settings."
-msgstr "编辑服务、认证或防火墙设置后，请保存并应用。"
+msgid "Load Nora config"
+msgstr "加载 Nora 配置"
+
+msgid "Save Nora config"
+msgstr "保存 Nora 配置"
 
 msgid "Running Status"
 msgstr "运行状态"
@@ -304,17 +235,17 @@ msgstr "运行状态"
 msgid "Plugin Settings"
 msgstr "插件设置"
 
-msgid "Configuration Management"
-msgstr "配置管理"
+msgid "Nora Configuration"
+msgstr "Nora 配置"
+
+msgid "Registries"
+msgstr "仓库"
 
 msgid "Version Update"
 msgstr "版本更新"
 
 msgid "Version settings"
 msgstr "版本设置"
-
-msgid "Save & Apply the target version and architecture before upgrading."
-msgstr "升级前请保存并应用目标版本和架构设置。"
 
 msgid "npm"
 msgstr "npm"
