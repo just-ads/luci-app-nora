@@ -30,6 +30,19 @@ require_command() {
 	command -v "$1" >/dev/null 2>&1 || fail "missing command: $1"
 }
 
+ensure_uci_section() {
+	require_command uci
+	uci -q get "$UCI_CONFIG.$UCI_SECTION" >/dev/null 2>&1 || uci set "$UCI_CONFIG.$UCI_SECTION=main" >/dev/null 2>&1 || fail "failed to create UCI section"
+}
+
+set_uci_option() {
+	uci set "$UCI_CONFIG.$UCI_SECTION.$1=$2" >/dev/null 2>&1 || fail "failed to save $1"
+}
+
+commit_uci_config() {
+	uci commit "$UCI_CONFIG" >/dev/null 2>&1 || fail "failed to commit UCI config"
+}
+
 is_bool() {
 	case "$1" in
 		0|1) return 0 ;;
@@ -76,6 +89,13 @@ validate_abs_path() {
 	esac
 }
 
+validate_upload_path() {
+	case "$1" in
+		/tmp/nora-upload-*) validate_abs_path "$1" ;;
+		*) return 1 ;;
+	esac
+}
+
 validate_host() {
 	printf '%s' "$1" | grep -Eq '^[A-Za-z0-9:._-]+$'
 }
@@ -85,8 +105,55 @@ validate_url_or_empty() {
 	printf '%s' "$1" | grep -Eq '^https?://[A-Za-z0-9._~:/?#\[\]@!$&()*+,;=%-]+$'
 }
 
-validate_firewall_src() {
-	printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_-]+$'
+trim_value() {
+	printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+}
+
+detect_openwrt_ip() {
+	local ip candidate
+
+	ip="$(uci -q get network.lan.ipaddr 2>/dev/null)"
+	for candidate in $ip; do
+		candidate="${candidate%%/*}"
+		if [ -n "$candidate" ] && [ "$candidate" != "0.0.0.0" ] && printf '%s' "$candidate" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+			printf '%s' "$candidate"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+default_public_url() {
+	local ip
+
+	ip="$(detect_openwrt_ip)" || return 1
+	printf 'http://%s:%s' "$ip" "$CFG_PORT"
+}
+
+normalize_public_url() {
+	CFG_PUBLIC_URL="$(trim_value "$CFG_PUBLIC_URL")"
+
+	if [ "$CFG_HOST" = "0.0.0.0" ]; then
+		case "$CFG_PUBLIC_URL" in
+			''|0.0.0.0|0.0.0.0:*|http://0.0.0.0|http://0.0.0.0:*|https://0.0.0.0|https://0.0.0.0:*)
+				CFG_PUBLIC_URL="$(default_public_url)" || fail "public_url is required when host is 0.0.0.0 and OpenWrt LAN IP cannot be detected"
+				return 0
+				;;
+		esac
+	fi
+
+	case "$CFG_PUBLIC_URL" in
+		''|http://*|https://*) ;;
+		*) CFG_PUBLIC_URL="http://$CFG_PUBLIC_URL" ;;
+	esac
+}
+
+detect_latest_version() {
+	command -v wget >/dev/null 2>&1 || return 1
+	wget -q -O - 'https://api.github.com/repos/getnora-io/nora/releases/latest' 2>/dev/null |
+		sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+		sed -n '1p'
 }
 
 validate_username() {
@@ -149,7 +216,7 @@ normalize_version() {
 	esac
 }
 
-config_load_values() {
+config_load_raw_values() {
 	config_load "$UCI_CONFIG" || fail "unable to load UCI config nora"
 
 	config_get_bool CFG_ENABLED "$UCI_SECTION" enabled 0
@@ -168,10 +235,48 @@ config_load_values() {
 	config_get CFG_NPM_PROXY "$UCI_SECTION" npm_proxy ''
 	config_get CFG_NPM_PROXY_TIMEOUT "$UCI_SECTION" npm_proxy_timeout '30'
 	config_get CFG_NPM_METADATA_TTL "$UCI_SECTION" npm_metadata_ttl '300'
-	config_get_bool CFG_FIREWALL_ENABLED "$UCI_SECTION" firewall_enabled 0
-	config_get CFG_FIREWALL_SRC "$UCI_SECTION" firewall_src 'lan'
+	config_get_bool CFG_ALLOW_WAN_ACCESS "$UCI_SECTION" allow_wan_access 0
+}
+
+config_load_values() {
+	config_load_raw_values
 
 	validate_config_values
+}
+
+config_load_path_values() {
+	config_load_raw_values
+	validate_abs_path "$CFG_INSTALL_DIR" || fail "invalid install_dir"
+}
+
+config_load_htpasswd_values() {
+	config_load_raw_values
+	is_bool "$CFG_ENABLED" || fail "invalid enabled"
+	validate_abs_path "$CFG_INSTALL_DIR" || fail "invalid install_dir"
+	validate_abs_path "$CFG_HTPASSWD_FILE" || fail "invalid htpasswd_file"
+}
+
+config_load_firewall_values() {
+	config_load_raw_values
+	validate_port "$CFG_PORT" || fail "invalid port"
+	is_bool "$CFG_ALLOW_WAN_ACCESS" || fail "invalid allow_wan_access"
+}
+
+config_load_upgrade_values() {
+	config_load "$UCI_CONFIG" || fail "unable to load UCI config nora"
+	config_get CFG_VERSION "$UCI_SECTION" version 'latest'
+	validate_version "$CFG_VERSION" || fail "invalid version"
+}
+
+config_load_download_values() {
+	config_load "$UCI_CONFIG" || fail "unable to load UCI config nora"
+
+	config_get CFG_INSTALL_DIR "$UCI_SECTION" install_dir '/opt/nora'
+	config_get CFG_ARCHITECTURE "$UCI_SECTION" architecture 'auto'
+
+	validate_abs_path "$CFG_INSTALL_DIR" || fail "invalid install_dir"
+	validate_architecture "$CFG_ARCHITECTURE" || fail "invalid architecture"
+	CFG_RESOLVED_ARCH="$(resolve_architecture "$CFG_ARCHITECTURE")" || fail "unsupported auto architecture: $(uname -m 2>/dev/null)"
 }
 
 validate_config_values() {
@@ -181,6 +286,7 @@ validate_config_values() {
 	validate_architecture "$CFG_ARCHITECTURE" || fail "invalid architecture"
 	validate_host "$CFG_HOST" || fail "invalid host"
 	validate_port "$CFG_PORT" || fail "invalid port"
+	normalize_public_url
 	validate_url_or_empty "$CFG_PUBLIC_URL" || fail "invalid public_url"
 	validate_abs_path "$CFG_STORAGE_PATH" || fail "invalid storage_path"
 	is_bool "$CFG_AUTH_ENABLED" || fail "invalid auth_enabled"
@@ -191,8 +297,7 @@ validate_config_values() {
 	validate_url_or_empty "$CFG_NPM_PROXY" || fail "invalid npm_proxy"
 	validate_timeout "$CFG_NPM_PROXY_TIMEOUT" || fail "invalid npm_proxy_timeout"
 	validate_timeout "$CFG_NPM_METADATA_TTL" || fail "invalid npm_metadata_ttl"
-	is_bool "$CFG_FIREWALL_ENABLED" || fail "invalid firewall_enabled"
-	validate_firewall_src "$CFG_FIREWALL_SRC" || fail "invalid firewall_src"
+	is_bool "$CFG_ALLOW_WAN_ACCESS" || fail "invalid allow_wan_access"
 	CFG_RESOLVED_ARCH="$(resolve_architecture "$CFG_ARCHITECTURE")" || fail "unsupported auto architecture: $(uname -m 2>/dev/null)"
 
 	if [ "$CFG_AUTH_ENABLED" -eq 1 ] && [ -f "$CFG_HTPASSWD_FILE" ]; then
@@ -295,13 +400,206 @@ EOF
 	ok_message "render-config" "rendered $output"
 }
 
+read_nora_config() {
+	local config_path content
+
+	config_load_path_values
+	config_path="$CFG_INSTALL_DIR/config/config.toml"
+	[ -f "$config_path" ] || fail "Nora config does not exist; render it first"
+	content="$(cat "$config_path" 2>/dev/null)" || fail "failed to read Nora config"
+
+	json_init
+	json_add_boolean success 1
+	json_add_string action "read-nora-config"
+	json_add_string path "$config_path"
+	json_add_string content "$content"
+
+	local host port public_url storage_path auth_enabled anonymous_read htpasswd_file token_storage
+	local npm_enabled npm_proxy npm_proxy_timeout npm_metadata_ttl
+
+	host=$(sed -n '/^\[server\]/,/^\[/s/^host = "\(.*\)"/\1/p' "$config_path" | head -1)
+	port=$(sed -n '/^\[server\]/,/^\[/s/^port = \([0-9]*\)/\1/p' "$config_path" | head -1)
+	public_url=$(sed -n '/^\[server\]/,/^\[/s/^public_url = "\(.*\)"/\1/p' "$config_path" | head -1)
+	storage_path=$(sed -n '/^\[storage\]/,/^\[/s/^path = "\(.*\)"/\1/p' "$config_path" | head -1)
+	auth_enabled=$(sed -n '/^\[auth\]/,/^\[/s/^enabled = \(true\|false\)/\1/p' "$config_path" | head -1)
+	anonymous_read=$(sed -n '/^\[auth\]/,/^\[/s/^anonymous_read = \(true\|false\)/\1/p' "$config_path" | head -1)
+	htpasswd_file=$(sed -n '/^\[auth\]/,/^\[/s/^htpasswd_file = "\(.*\)"/\1/p' "$config_path" | head -1)
+	token_storage=$(sed -n '/^\[auth\]/,/^\[/s/^token_storage = "\(.*\)"/\1/p' "$config_path" | head -1)
+	npm_enabled=$(sed -n '/^\[npm\]/,/^\[/s/^enabled = \(true\|false\)/\1/p' "$config_path" | head -1)
+	npm_proxy=$(sed -n '/^\[npm\]/,/^\[/s/^proxy = "\(.*\)"/\1/p' "$config_path" | head -1)
+	npm_proxy_timeout=$(sed -n '/^\[npm\]/,/^\[/s/^proxy_timeout = \([0-9]*\)/\1/p' "$config_path" | head -1)
+	npm_metadata_ttl=$(sed -n '/^\[npm\]/,/^\[/s/^metadata_ttl = \([0-9]*\)/\1/p' "$config_path" | head -1)
+
+	json_add_object server
+	[ -n "$host" ] && json_add_string host "$host"
+	[ -n "$port" ] && json_add_int port "$port"
+	[ -n "$public_url" ] && json_add_string public_url "$public_url"
+	json_close_object
+
+	json_add_object storage
+	[ -n "$storage_path" ] && json_add_string path "$storage_path"
+	json_close_object
+
+	json_add_object auth
+	[ -n "$auth_enabled" ] && json_add_boolean auth_enabled "$([ "$auth_enabled" = "true" ] && printf 1 || printf 0)"
+	[ -n "$anonymous_read" ] && json_add_boolean anonymous_read "$([ "$anonymous_read" = "true" ] && printf 1 || printf 0)"
+	[ -n "$htpasswd_file" ] && json_add_string htpasswd_file "$htpasswd_file"
+	[ -n "$token_storage" ] && json_add_string token_storage "$token_storage"
+	json_close_object
+
+	json_add_object npm
+	[ -n "$npm_enabled" ] && json_add_boolean npm_enabled "$([ "$npm_enabled" = "true" ] && printf 1 || printf 0)"
+	[ -n "$npm_proxy" ] && json_add_string npm_proxy "$npm_proxy"
+	[ -n "$npm_proxy_timeout" ] && json_add_int npm_proxy_timeout "$npm_proxy_timeout"
+	[ -n "$npm_metadata_ttl" ] && json_add_int npm_metadata_ttl "$npm_metadata_ttl"
+	[ -n "$storage_path" ] && json_add_string storage_path "$storage_path"
+	json_close_object
+
+	json_dump
+}
+
+write_nora_config() {
+	local content="$1"
+	local config_path tmp
+
+	config_load_path_values
+	config_path="$CFG_INSTALL_DIR/config/config.toml"
+	tmp="$config_path.tmp.$$"
+	mkdir -p "$CFG_INSTALL_DIR/config" || fail "failed to create config directory"
+
+	umask 077
+	printf '%s\n' "$content" > "$tmp" || fail "failed to write temporary Nora config"
+	mv -f "$tmp" "$config_path" || fail "failed to save Nora config"
+	ok_message "write-nora-config" "saved $config_path"
+}
+
+save_settings() {
+	local section="$1"
+	local settings_json changed=0
+
+	settings_json="$(cat)" || fail "failed to read settings"
+	config_load_raw_values
+
+	json_init
+	json_load "$settings_json" 2>/dev/null || json_load '{}' 2>/dev/null
+
+	case "$section" in
+		global)
+			local enabled install_dir host port public_url allow_wan_access
+			json_get_var enabled enabled
+			json_get_var install_dir install_dir
+			json_get_var host host
+			json_get_var port port
+			json_get_var public_url public_url
+			json_get_var allow_wan_access allow_wan_access
+
+			[ -n "$enabled" ] || enabled="$CFG_ENABLED"
+			[ -n "$install_dir" ] || install_dir="$CFG_INSTALL_DIR"
+			[ -n "$host" ] || host="$CFG_HOST"
+			[ -n "$port" ] || port="$CFG_PORT"
+			[ -n "$public_url" ] || public_url="$CFG_PUBLIC_URL"
+			[ -n "$allow_wan_access" ] || allow_wan_access="$CFG_ALLOW_WAN_ACCESS"
+
+			is_bool "$enabled" || fail "invalid enabled"
+			validate_abs_path "$install_dir" || fail "invalid install_dir"
+			validate_host "$host" || fail "invalid host"
+			validate_port "$port" || fail "invalid port"
+			is_bool "$allow_wan_access" || fail "invalid allow_wan_access"
+
+			CFG_HOST="$host"
+			CFG_PORT="$port"
+			CFG_PUBLIC_URL="$public_url"
+			normalize_public_url
+			public_url="$CFG_PUBLIC_URL"
+			validate_url_or_empty "$public_url" || fail "invalid public_url"
+
+			ensure_uci_section
+			set_uci_option enabled "$enabled"
+			set_uci_option install_dir "$install_dir"
+			set_uci_option host "$host"
+			set_uci_option port "$port"
+			set_uci_option public_url "$public_url"
+			set_uci_option allow_wan_access "$allow_wan_access"
+			changed=1
+			;;
+		auth)
+			local auth_enabled anonymous_read htpasswd_file token_storage
+			json_get_var auth_enabled auth_enabled
+			json_get_var anonymous_read anonymous_read
+			json_get_var htpasswd_file htpasswd_file
+			json_get_var token_storage token_storage
+
+			[ -n "$auth_enabled" ] || auth_enabled="$CFG_AUTH_ENABLED"
+			[ -n "$anonymous_read" ] || anonymous_read="$CFG_ANONYMOUS_READ"
+			[ -n "$htpasswd_file" ] || htpasswd_file="$CFG_HTPASSWD_FILE"
+			[ -n "$token_storage" ] || token_storage="$CFG_TOKEN_STORAGE"
+
+			is_bool "$auth_enabled" || fail "invalid auth_enabled"
+			is_bool "$anonymous_read" || fail "invalid anonymous_read"
+			validate_abs_path "$htpasswd_file" || fail "invalid htpasswd_file"
+			validate_abs_path "$token_storage" || fail "invalid token_storage"
+
+			ensure_uci_section
+			set_uci_option auth_enabled "$auth_enabled"
+			set_uci_option anonymous_read "$anonymous_read"
+			set_uci_option htpasswd_file "$htpasswd_file"
+			set_uci_option token_storage "$token_storage"
+			changed=1
+			;;
+		registry)
+			local npm_enabled npm_proxy npm_proxy_timeout npm_metadata_ttl storage_path
+			json_get_var npm_enabled npm_enabled
+			json_get_var npm_proxy npm_proxy
+			json_get_var npm_proxy_timeout npm_proxy_timeout
+			json_get_var npm_metadata_ttl npm_metadata_ttl
+			json_get_var storage_path storage_path
+
+			[ -n "$npm_enabled" ] || npm_enabled="$CFG_NPM_ENABLED"
+			[ -n "$npm_proxy" ] || npm_proxy="$CFG_NPM_PROXY"
+			[ -n "$npm_proxy_timeout" ] || npm_proxy_timeout="$CFG_NPM_PROXY_TIMEOUT"
+			[ -n "$npm_metadata_ttl" ] || npm_metadata_ttl="$CFG_NPM_METADATA_TTL"
+			[ -n "$storage_path" ] || storage_path="$CFG_STORAGE_PATH"
+
+			is_bool "$npm_enabled" || fail "invalid npm_enabled"
+			validate_url_or_empty "$npm_proxy" || fail "invalid npm_proxy"
+			validate_timeout "$npm_proxy_timeout" || fail "invalid npm_proxy_timeout"
+			validate_timeout "$npm_metadata_ttl" || fail "invalid npm_metadata_ttl"
+			validate_abs_path "$storage_path" || fail "invalid storage_path"
+
+			ensure_uci_section
+			set_uci_option npm_enabled "$npm_enabled"
+			set_uci_option npm_proxy "$npm_proxy"
+			set_uci_option npm_proxy_timeout "$npm_proxy_timeout"
+			set_uci_option npm_metadata_ttl "$npm_metadata_ttl"
+			set_uci_option storage_path "$storage_path"
+			changed=1
+			;;
+		version)
+			local architecture
+			json_get_var architecture architecture
+
+			[ -n "$architecture" ] || architecture="$CFG_ARCHITECTURE"
+			validate_architecture "$architecture" || fail "invalid architecture"
+			ensure_uci_section
+			set_uci_option architecture "$architecture"
+			changed=1
+			;;
+		*)
+			fail "unknown settings section: $section"
+			;;
+	esac
+
+	[ "$changed" -eq 1 ] && { commit_uci_config; render_config >/dev/null 2>&1 || true; }
+	ok_message "save-settings" "settings saved"
+}
+
 download_binary() {
 	local target_version="$1"
 	local tag asset url tmp target_tmp binary previous version_output
 
-	config_load_values
-	ensure_directories
-	require_command uclient-fetch
+	config_load_download_values
+	mkdir -p "$CFG_INSTALL_DIR/bin" || fail "failed to create binary directory"
+	require_command wget
 	validate_version "$target_version" || fail "invalid install version"
 
 	binary="$CFG_INSTALL_DIR/bin/nora"
@@ -318,7 +616,7 @@ download_binary() {
 	tmp="/tmp/nora-download.$$"
 	target_tmp="$CFG_INSTALL_DIR/bin/.nora.new.$$"
 	rm -f "$tmp" "$target_tmp"
-	uclient-fetch -q -O "$tmp" "$url" || fail "download failed"
+	wget -q -O "$tmp" "$url" || fail "download failed"
 	[ -s "$tmp" ] || fail "downloaded file is empty"
 	cp "$tmp" "$target_tmp" || fail "failed to stage binary"
 	chmod 0755 "$target_tmp" || fail "failed to chmod binary"
@@ -344,16 +642,79 @@ download_binary() {
 	json_dump
 }
 
+upload_binary() {
+	local upload_path="$1"
+	local target_tmp binary previous version_output
+
+	config_load_download_values
+	validate_upload_path "$upload_path" || fail "invalid upload path"
+	[ -s "$upload_path" ] || fail "uploaded binary is empty"
+	mkdir -p "$CFG_INSTALL_DIR/bin" || fail "failed to create binary directory"
+
+	binary="$CFG_INSTALL_DIR/bin/nora"
+	previous="$CFG_INSTALL_DIR/bin/nora.previous"
+	target_tmp="$CFG_INSTALL_DIR/bin/.nora.upload.$$"
+	rm -f "$target_tmp"
+	cp "$upload_path" "$target_tmp" || fail "failed to stage uploaded binary"
+	chmod 0755 "$target_tmp" || fail "failed to chmod uploaded binary"
+	version_output="$($target_tmp --version 2>/dev/null || $target_tmp version 2>/dev/null || true)"
+	[ -n "$version_output" ] || fail "uploaded binary failed basic execution check"
+	if [ -e "$binary" ]; then
+		cp -fp "$binary" "$previous" || fail "failed to back up previous binary"
+	fi
+	mv -f "$target_tmp" "$binary" || {
+		[ -e "$previous" ] && [ ! -e "$binary" ] && cp -fp "$previous" "$binary" >/dev/null 2>&1 || true
+		fail "failed to replace binary"
+	}
+	rm -f "$upload_path"
+
+	json_init
+	json_add_boolean success 1
+	json_add_string action "upload-binary"
+	json_add_string binary "$binary"
+	json_add_string detected_version "$version_output"
+	json_dump
+}
+
 service_action() {
+	local action="$1"
+	local binary
+
 	[ -x "$SERVICE_SCRIPT" ] || fail "service script missing"
-	"$SERVICE_SCRIPT" "$1" >/dev/null 2>&1 || fail "service action failed: $1"
-	ok_message "$1" "$1 ok"
+
+	case "$action" in
+		start|restart)
+			config_load_values
+			binary="$CFG_INSTALL_DIR/bin/nora"
+			[ -x "$binary" ] || fail "Nora binary is not installed"
+			if [ "$CFG_AUTH_ENABLED" -eq 1 ]; then
+				[ -s "$CFG_HTPASSWD_FILE" ] || fail "upload an htpasswd entry before starting Nora"
+			fi
+			if [ "$CFG_ENABLED" -ne 1 ]; then
+				require_command uci
+				uci set "$UCI_CONFIG.$UCI_SECTION.enabled=1" >/dev/null 2>&1 || fail "failed to enable service"
+				uci commit "$UCI_CONFIG" >/dev/null 2>&1 || fail "failed to save enabled state"
+			fi
+			render_config >/dev/null 2>&1 || fail "failed to render Nora config before start"
+			;;
+	esac
+
+	"$SERVICE_SCRIPT" "$action" >/dev/null 2>&1 || fail "service action failed: $action"
+
+	case "$action" in
+		start|restart)
+			sleep 1
+			detect_running "$binary" || fail "Nora exited during startup; check logread -e nora"
+			;;
+	esac
+
+	ok_message "$action" "$action ok"
 }
 
 set_htpasswd() {
 	local line="$1"
 	local tmp message
-	config_load_values
+	config_load_htpasswd_values
 	validate_htpasswd_line "$line" || fail "invalid bcrypt htpasswd line"
 	mkdir -p "$(dirname "$CFG_HTPASSWD_FILE")" || fail "failed to create htpasswd directory"
 	tmp="$CFG_HTPASSWD_FILE.tmp.$$"
@@ -373,14 +734,14 @@ set_htpasswd() {
 }
 
 firewall_apply() {
-	config_load_values
+	config_load_firewall_values
 	command -v uci >/dev/null 2>&1 || fail "uci command missing"
 
-	if [ "$CFG_FIREWALL_ENABLED" -eq 1 ]; then
+	if [ "$CFG_ALLOW_WAN_ACCESS" -eq 1 ]; then
 		uci -q delete firewall.nora >/dev/null 2>&1
 		uci set firewall.nora=rule || fail "failed to create firewall section"
 		uci set firewall.nora.name='Allow-Nora' || fail "failed to set firewall name"
-		uci set firewall.nora.src="$CFG_FIREWALL_SRC" || fail "failed to set firewall src"
+		uci set firewall.nora.src='wan' || fail "failed to set firewall src"
 		uci set firewall.nora.proto='tcp' || fail "failed to set firewall proto"
 		uci set firewall.nora.dest_port="$CFG_PORT" || fail "failed to set firewall port"
 		uci set firewall.nora.target='ACCEPT' || fail "failed to set firewall target"
@@ -413,8 +774,9 @@ detect_running() {
 }
 
 collect_status() {
-	local binary config_path installed running htpasswd_present detected_version
-	config_load_values
+	local binary config_path installed running htpasswd_present detected_version latest_version
+	config_load_raw_values
+	CFG_RESOLVED_ARCH="$(resolve_architecture "$CFG_ARCHITECTURE" 2>/dev/null || true)"
 	binary="$CFG_INSTALL_DIR/bin/nora"
 	config_path="$CFG_INSTALL_DIR/config/config.toml"
 	installed=0
@@ -428,6 +790,7 @@ collect_status() {
 	if [ "$installed" -eq 1 ]; then
 		detected_version="$($binary --version 2>/dev/null || $binary version 2>/dev/null || true)"
 	fi
+	latest_version="$(detect_latest_version || true)"
 
 	json_init
 	json_add_boolean success 1
@@ -442,21 +805,50 @@ collect_status() {
 	json_add_string config_path "$config_path"
 	json_add_boolean config_present "$( [ -s "$config_path" ] && printf 1 || printf 0 )"
 	json_add_boolean auth_enabled "$CFG_AUTH_ENABLED"
+	json_add_boolean anonymous_read "$CFG_ANONYMOUS_READ"
+	json_add_string htpasswd_file "$CFG_HTPASSWD_FILE"
 	json_add_boolean htpasswd_present "$htpasswd_present"
 	json_add_boolean npm_enabled "$CFG_NPM_ENABLED"
-	json_add_boolean firewall_enabled "$CFG_FIREWALL_ENABLED"
-	json_add_string firewall_src "$CFG_FIREWALL_SRC"
+	json_add_string npm_proxy "$CFG_NPM_PROXY"
+	json_add_int npm_proxy_timeout "$CFG_NPM_PROXY_TIMEOUT"
+	json_add_int npm_metadata_ttl "$CFG_NPM_METADATA_TTL"
+	json_add_boolean allow_wan_access "$CFG_ALLOW_WAN_ACCESS"
 	json_add_string public_url "$CFG_PUBLIC_URL"
 	json_add_string host "$CFG_HOST"
 	json_add_int port "$CFG_PORT"
 	json_add_string storage_path "$CFG_STORAGE_PATH"
 	json_add_string token_storage "$CFG_TOKEN_STORAGE"
 	json_add_string installed_version "$detected_version"
+	json_add_string latest_version "$latest_version"
+	json_dump
+}
+
+read_uci_config() {
+	config_load_raw_values
+	json_init
+	json_add_boolean success 1
+
+	json_add_object global
+	json_add_boolean enabled "$CFG_ENABLED"
+	json_add_string install_dir "$CFG_INSTALL_DIR"
+	json_add_string host "$CFG_HOST"
+	json_add_int port "$CFG_PORT"
+	json_add_string public_url "$CFG_PUBLIC_URL"
+	json_add_boolean allow_wan_access "$CFG_ALLOW_WAN_ACCESS"
+	json_close_object
+
+	json_add_object auth
+	json_add_boolean auth_enabled "$CFG_AUTH_ENABLED"
+	json_add_boolean anonymous_read "$CFG_ANONYMOUS_READ"
+	json_add_string htpasswd_file "$CFG_HTPASSWD_FILE"
+	json_add_string token_storage "$CFG_TOKEN_STORAGE"
+	json_close_object
+
 	json_dump
 }
 
 usage() {
-	fail "usage: nora-control {status|install|upgrade|render-config|start|stop|restart|set-htpasswd|firewall-apply}"
+	fail "usage: nora-control {status|read-uci-config|install|upgrade|upload-binary|render-config|read-nora-config|write-nora-config|save-settings|start|stop|restart|set-htpasswd|firewall-apply}"
 }
 
 main() {
@@ -464,15 +856,32 @@ main() {
 		status)
 			collect_status
 			;;
+		read-uci-config)
+			read_uci_config
+			;;
 		install)
 			download_binary "${2:-latest}" "install"
 			;;
 		upgrade)
-			config_load_values
-			download_binary "$CFG_VERSION" "upgrade"
+			download_binary "latest" "upgrade"
+			;;
+		upload-binary)
+			[ $# -eq 2 ] || fail "upload-binary requires uploaded file path"
+			upload_binary "$2"
 			;;
 		render-config)
 			render_config
+			;;
+		read-nora-config)
+			read_nora_config
+			;;
+		write-nora-config)
+			[ $# -eq 2 ] || fail "write-nora-config requires config content"
+			write_nora_config "$2"
+			;;
+		save-settings)
+			[ $# -eq 2 ] || fail "save-settings requires section name (global|auth|registry|version)"
+			save_settings "$2"
 			;;
 		start|stop|restart)
 			service_action "$1"

@@ -9,21 +9,11 @@ STOP=10
 SERVICE_NAME="nora"
 
 start_service() {
+	local install_dir
+
 	config_load nora
-
-	local enabled install_dir auth_enabled htpasswd_file
-	config_get_bool enabled config enabled 0
 	config_get install_dir config install_dir '/opt/nora'
-	config_get_bool auth_enabled config auth_enabled 1
-	config_get htpasswd_file config htpasswd_file "$install_dir/config/users.htpasswd"
-
-	[ "$enabled" -eq 1 ] || return 0
-	/usr/libexec/nora-control render-config >/dev/null 2>&1 || return 1
-	[ -x "$install_dir/bin/nora" ] || return 1
-
-	if [ "$auth_enabled" -eq 1 ]; then
-		[ -s "$htpasswd_file" ] || return 1
-	fi
+	/usr/libexec/nora-control render-config >/dev/null || return 1
 
 	procd_open_instance
 	procd_set_param env NORA_CONFIG_PATH="$install_dir/config/config.toml"

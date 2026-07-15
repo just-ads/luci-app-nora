@@ -8,11 +8,23 @@ list_methods() {
 	cat <<'EOF'
 {
 	"status": {},
+	"read_uci_config": {},
 	"install": {
 		"version": "String"
 	},
 	"upgrade": {},
+	"upload_binary": {
+		"path": "String"
+	},
 	"render_config": {},
+	"read_nora_config": {},
+	"write_nora_config": {
+		"content": "String"
+	},
+	"save_settings": {
+		"section": "String",
+		"settings": "String"
+	},
 	"start": {},
 	"stop": {},
 	"restart": {},
@@ -46,6 +58,9 @@ handle_call() {
 		status)
 			call_control status
 			;;
+		read_uci_config)
+			call_control read-uci-config
+			;;
 		install)
 			local version
 			json_get_var version version
@@ -54,8 +69,27 @@ handle_call() {
 		upgrade)
 			call_control upgrade
 			;;
+		upload_binary)
+			local path
+			json_get_var path path
+			call_control upload-binary "$path"
+			;;
 		render_config)
 			call_control render-config
+			;;
+		read_nora_config)
+			call_control read-nora-config
+			;;
+		write_nora_config)
+			local content
+			json_get_var content content
+			call_control write-nora-config "$content"
+			;;
+		save_settings)
+			local section settings_json
+			json_get_var section section
+			json_get_var settings_json settings
+			printf '%s\n' "${settings_json:-{\}}" | call_control save-settings "$section"
 			;;
 		start)
 			call_control start
