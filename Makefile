@@ -24,6 +24,9 @@ fi
 chmod 0600 "$${default_htpasswd}" >/dev/null 2>&1 || true
 
 if [ -z "$${IPKG_INSTROOT}" ]; then
+	if [ -x /usr/libexec/nora-control ]; then
+		/usr/libexec/nora-control render-config >/dev/null 2>&1 || true
+	fi
 	rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* >/dev/null 2>&1 || true
 	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
 fi
