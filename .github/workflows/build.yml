@@ -5,6 +5,9 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: write
+
 env:
   OPENWRT_VERSION: 23.05.5
   OPENWRT_TARGET: x86/64
