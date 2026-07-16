@@ -11,8 +11,6 @@
 				<div class="nora-grid">
 					<div class="nora-card"><h3>{{ _("Service status") }}</h3><div class="nora-value" id="nora-s-status">-</div></div>
 					<div class="nora-card"><h3>{{ _("Current version") }}</h3><div class="nora-value" id="nora-s-version">-<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-install-inline" style="display:none">{{ _("Install") }}</button></div></div>
-					<div class="nora-card"><h3>{{ _("Service enabled state") }}</h3><div class="nora-value" id="nora-s-enabled">-</div></div>
-					<div class="nora-card"><h3>{{ _("Authentication state") }}</h3><div class="nora-value" id="nora-s-auth">-</div></div>
 					<div class="nora-card" id="nora-ui-card" style="display:none">
     					<h3>{{ _("Nora UI address") }}</h3>
     					<div class="nora-value"><a id="nora-link-ui" class="nora-url" href="#" target="_blank" rel="noopener noreferrer">-</a></div>
@@ -84,29 +82,20 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 
 	function render() {
 		return L.resolveDefault(callStatus(), {}).then(function(s) {
-			var running = !!s.running, installed = !!s.installed, enabled = !!s.enabled;
-			var authEnabled = !!s.auth_enabled;
+			var running = !!s.running, installed = !!s.installed;
 			var elS = document.getElementById('nora-s-status');
 			elS.textContent = running ? '{{ _("Running") }}' : '{{ _("Stopped") }}';
 			elS.className = 'nora-value ' + sc(running ? 'ok' : 'stop');
 
-		var elV = document.getElementById('nora-s-version');
-		var ib = document.getElementById('nora-btn-install-inline');
-		if (installed) {
-			elV.textContent = s.installed_version || '{{ _("Detected but version string is unavailable") }}';
-			if (ib) ib.style.display = 'none';
-		} else {
-			elV.textContent = '';
-			if (ib) ib.style.display = '';
-		}
-
-			var elE = document.getElementById('nora-s-enabled');
-			elE.textContent = enabled ? '{{ _("Enabled") }}' : '{{ _("Disabled") }}';
-			elE.className = 'nora-value ' + sc(enabled ? 'ok' : 'warn');
-
-			var elA = document.getElementById('nora-s-auth');
-			elA.textContent = authEnabled ? (s.htpasswd_present ? '{{ _("Enabled with htpasswd") }}' : '{{ _("Enabled, waiting for htpasswd") }}') : '{{ _("Disabled") }}';
-			elA.className = 'nora-value ' + sc(authEnabled ? (s.htpasswd_present ? 'ok' : 'warn') : 'warn');
+			var elV = document.getElementById('nora-s-version');
+			var ib = document.getElementById('nora-btn-install-inline');
+			if (installed) {
+				elV.textContent = s.installed_version || '{{ _("Detected but version string is unavailable") }}';
+				if (ib) ib.style.display = 'none';
+			} else {
+				elV.textContent = '';
+				if (ib) ib.style.display = '';
+			}
 
 			var uiLink = document.getElementById('nora-link-ui');
 			var uiCard = document.getElementById('nora-ui-card');

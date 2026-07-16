@@ -62,6 +62,7 @@ document.getElementById('nora-v-skeleton').style.display = '';
 Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var rpc = mods[0], ui = mods[1];
 	var callStatus = rpc.declare({ object: 'luci.nora', method: 'status', expect: { '': {} } });
+	var callLatestVersion = rpc.declare({ object: 'luci.nora', method: 'latest_version', expect: { '': {} } });
 	var callInstall = rpc.declare({ object: 'luci.nora', method: 'install', params: [ 'version' ], expect: { '': {} } });
 	var callUpgrade = rpc.declare({ object: 'luci.nora', method: 'upgrade', expect: { '': {} } });
 	var callUploadBinary = rpc.declare({ object: 'luci.nora', method: 'upload_binary', params: [ 'path' ], expect: { '': {} } });
@@ -109,12 +110,14 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	});
 
 	function refreshSummary() {
+		var latestEl = document.getElementById('nora-v-latest');
+		latestEl.textContent = '{{ _("Checking...") }}';
+
 		return L.resolveDefault(callStatus(), {}).then(function(s) {
 			var inst = !!s.installed;
 			document.getElementById('nora-v-status').textContent = inst ? '{{ _("Installed") }}' : '{{ _("Not installed") }}';
 			document.getElementById('nora-v-status').className = 'nora-value ' + sc(inst ? 'ok' : 'warn');
 			document.getElementById('nora-v-current').textContent = s.installed_version || (inst ? '{{ _("Detected but version string is unavailable") }}' : '{{ _("Not installed") }}');
-			document.getElementById('nora-v-latest').textContent = s.latest_version || '{{ _("Unavailable") }}';
 			document.getElementById('nora-v-arch').textContent = s.resolved_architecture || s.architecture || '{{ _("Unknown") }}';
 			document.getElementById('nora-v-binary').textContent = s.binary || '{{ _("Unavailable") }}';
 			document.getElementById('nora-v-action-title').textContent = inst ? '{{ _("Upgrade Nora") }}' : '{{ _("Install Nora") }}';
@@ -122,6 +125,9 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 			document.getElementById('nora-btn-upgrade').style.display = inst ? '' : 'none';
 			var archEl = document.querySelector('#nora-v-form [name="cbid.nora.config.architecture"]');
 			if (archEl) archEl.value = s.architecture || 'auto';
+			L.resolveDefault(callLatestVersion(), {}).then(function(latest) {
+				latestEl.textContent = (latest && latest.latest_version) || '{{ _("Unavailable") }}';
+			});
 		});
 	}
 

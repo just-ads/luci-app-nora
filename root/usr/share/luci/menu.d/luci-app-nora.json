@@ -56,5 +56,13 @@
 			"type": "template",
 			"path": "nora/version"
 		}
+	},
+	"admin/services/nora/logs": {
+		"title": "Logs",
+		"order": 50,
+		"action": {
+			"type": "template",
+			"path": "nora/logs"
+		}
 	}
 }

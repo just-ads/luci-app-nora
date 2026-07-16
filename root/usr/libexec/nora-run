@@ -1,0 +1,51 @@
+#!/bin/sh
+
+. /lib/functions.sh
+
+UCI_CONFIG="nora"
+UCI_SECTION="config"
+
+is_uint() {
+	case "$1" in
+		''|*[!0-9]*) return 1 ;;
+		*) return 0 ;;
+	esac
+}
+
+validate_log_size() {
+	is_uint "$1" || return 1
+	[ "$1" -ge 4096 ] && [ "$1" -le 16777216 ]
+}
+
+json_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{ if (NR > 1) printf "\\n"; printf "%s", $0 }'
+}
+
+log_timestamp() {
+	date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+truncate_log_if_needed() {
+	local log_file="$1" max_size="$2" target="$3" size dir ts marker
+	dir="$(dirname "$log_file")"
+	mkdir -p "$dir" || return 1
+	[ -f "$log_file" ] || return 0
+	size="$(wc -c < "$log_file" 2>/dev/null | tr -d ' ')"
+	is_uint "$size" || size=0
+	[ "$size" -le "$max_size" ] && return 0
+	ts="$(log_timestamp)"
+	marker="{\"timestamp\":\"$(json_escape "$ts")\",\"level\":\"WARN\",\"fields\":{\"message\":\"log exceeded max size, truncated\",\"max_size\":$max_size},\"target\":\"$(json_escape "$target")\"}"
+	: > "$log_file" || return 1
+	printf '%s\n' "$marker" >> "$log_file" || return 1
+}
+
+config_load "$UCI_CONFIG"
+config_get install_dir "$UCI_SECTION" install_dir '/opt/nora'
+config_get log_max_size "$UCI_SECTION" nora_log_max_size '1048576'
+validate_log_size "$log_max_size" || log_max_size='1048576'
+
+log_file="$install_dir/logs/nora.log"
+mkdir -p "$install_dir/logs" || exit 1
+truncate_log_if_needed "$log_file" "$log_max_size" 'nora' || exit 1
+
+exec "$install_dir/bin/nora" >> "$log_file" 2>&1

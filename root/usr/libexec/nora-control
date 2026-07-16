@@ -7,8 +7,58 @@ UCI_CONFIG="nora"
 UCI_SECTION="config"
 SERVICE_SCRIPT="/etc/init.d/nora"
 
+json_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{ if (NR > 1) printf "\\n"; printf "%s", $0 }'
+}
+
+log_timestamp() {
+	date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+plugin_log_path() {
+	local install_dir
+	install_dir="$(uci -q get "$UCI_CONFIG.$UCI_SECTION.install_dir" 2>/dev/null)"
+	[ -n "$install_dir" ] || install_dir='/opt/nora'
+	printf '%s/logs/plugin.log' "$install_dir"
+}
+
+plugin_log_max_size() {
+	local max_size
+	max_size="$(uci -q get "$UCI_CONFIG.$UCI_SECTION.plugin_log_max_size" 2>/dev/null)"
+	validate_log_size "$max_size" 2>/dev/null || max_size='262144'
+	printf '%s' "$max_size"
+}
+
+truncate_log_if_needed() {
+	local log_file="$1" max_size="$2" target="$3" size dir ts marker
+	dir="$(dirname "$log_file")"
+	mkdir -p "$dir" >/dev/null 2>&1 || return 1
+	[ -f "$log_file" ] || return 0
+	size="$(wc -c < "$log_file" 2>/dev/null | tr -d ' ')"
+	is_uint "$size" || size=0
+	[ "$size" -le "$max_size" ] && return 0
+	ts="$(log_timestamp)"
+	marker="{\"timestamp\":\"$(json_escape "$ts")\",\"level\":\"WARN\",\"fields\":{\"message\":\"log exceeded max size, truncated\",\"max_size\":$max_size},\"target\":\"$(json_escape "$target")\"}"
+	: > "$log_file" 2>/dev/null || return 1
+	printf '%s\n' "$marker" >> "$log_file" 2>/dev/null || return 1
+}
+
+plugin_log() {
+	local level="$1" action="$2" message="$3" log_file max_size ts line
+	[ -n "$level" ] || level='INFO'
+	[ -n "$action" ] || action='unknown'
+	[ -n "$message" ] || message=''
+	log_file="$(plugin_log_path)"
+	max_size="$(plugin_log_max_size)"
+	truncate_log_if_needed "$log_file" "$max_size" 'luci-app-nora' >/dev/null 2>&1 || return 0
+	ts="$(log_timestamp)"
+	line="{\"timestamp\":\"$(json_escape "$ts")\",\"level\":\"$(json_escape "$level")\",\"fields\":{\"message\":\"$(json_escape "$message")\",\"action\":\"$(json_escape "$action")\"},\"target\":\"luci-app-nora\"}"
+	printf '%s\n' "$line" >> "$log_file" 2>/dev/null || true
+}
+
 fail() {
 	local message="$1"
+	plugin_log ERROR error "$message"
 	json_init
 	json_add_boolean success 0
 	json_add_string error "$message"
@@ -19,6 +69,10 @@ fail() {
 ok_message() {
 	local action="$1"
 	local message="$2"
+	case "$action" in
+		status|logs|read-uci-config|read-nora-config) ;;
+		*) plugin_log INFO "$action" "$message" ;;
+	esac
 	json_init
 	json_add_boolean success 1
 	json_add_string action "$action"
@@ -65,6 +119,20 @@ is_uint() {
 	esac
 }
 
+validate_log_size() {
+	is_uint "$1" || return 1
+	[ "$1" -ge 4096 ] && [ "$1" -le 16777216 ]
+}
+
+normalize_limit_bytes() {
+	local limit="$1"
+	if ! is_uint "$limit" || [ "$limit" -le 0 ]; then
+		limit=65536
+	fi
+	[ "$limit" -le 262144 ] || limit=262144
+	printf '%s' "$limit"
+}
+
 validate_port() {
 	is_uint "$1" || return 1
 	[ "$1" -ge 1 ] && [ "$1" -le 65535 ]
@@ -108,6 +176,14 @@ validate_host() {
 	printf '%s' "$1" | grep -Eq '^[A-Za-z0-9:._-]+$'
 }
 
+is_ipv4_addr() {
+	printf '%s' "$1" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+}
+
+valid_detected_ip() {
+	[ -n "$1" ] && [ "$1" != "0.0.0.0" ] && is_ipv4_addr "$1"
+}
+
 validate_url_or_empty() {
 	local url="$1"
 
@@ -126,10 +202,21 @@ trim_value() {
 detect_openwrt_ip() {
 	local ip candidate
 
+	if command -v ubus >/dev/null 2>&1 && command -v jsonfilter >/dev/null 2>&1; then
+		ip="$(ubus call network.interface.lan status 2>/dev/null | jsonfilter -e '@["ipv4-address"][0].address' 2>/dev/null)"
+		for candidate in $ip; do
+			candidate="${candidate%%/*}"
+			if valid_detected_ip "$candidate"; then
+				printf '%s' "$candidate"
+				return 0
+			fi
+		done
+	fi
+
 	ip="$(uci -q get network.lan.ipaddr 2>/dev/null)"
 	for candidate in $ip; do
 		candidate="${candidate%%/*}"
-		if [ -n "$candidate" ] && [ "$candidate" != "0.0.0.0" ] && printf '%s' "$candidate" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+		if valid_detected_ip "$candidate"; then
 			printf '%s' "$candidate"
 			return 0
 		fi
@@ -150,9 +237,15 @@ default_host() {
 }
 
 normalize_host() {
+	local detected
+
 	case "$CFG_HOST" in
 		''|0.0.0.0)
 			CFG_HOST="$(default_host)"
+			;;
+		192.168.1.1)
+			detected="$(detect_openwrt_ip || true)"
+			[ -n "$detected" ] && CFG_HOST="$detected"
 			;;
 	esac
 }
@@ -175,6 +268,16 @@ detect_latest_version() {
 	wget -q -O - 'https://api.github.com/repos/getnora-io/nora/releases/latest' 2>/dev/null |
 		sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
 		sed -n '1p'
+}
+
+collect_latest_version() {
+	local latest_version
+	latest_version="$(detect_latest_version || true)"
+	json_init
+	json_add_boolean success 1
+	json_add_string action latest-version
+	json_add_string latest_version "$latest_version"
+	json_dump
 }
 
 validate_username() {
@@ -257,6 +360,8 @@ config_load_raw_values() {
 	config_get CFG_NPM_PROXY_TIMEOUT "$UCI_SECTION" npm_proxy_timeout '30'
 	config_get CFG_NPM_METADATA_TTL "$UCI_SECTION" npm_metadata_ttl '300'
 	config_get_bool CFG_ALLOW_WAN_ACCESS "$UCI_SECTION" allow_wan_access 0
+	config_get CFG_NORA_LOG_MAX_SIZE "$UCI_SECTION" nora_log_max_size '1048576'
+	config_get CFG_PLUGIN_LOG_MAX_SIZE "$UCI_SECTION" plugin_log_max_size '262144'
 	normalize_host
 }
 
@@ -320,11 +425,147 @@ validate_config_values() {
 	validate_timeout "$CFG_NPM_PROXY_TIMEOUT" || fail "invalid npm_proxy_timeout"
 	validate_timeout "$CFG_NPM_METADATA_TTL" || fail "invalid npm_metadata_ttl"
 	is_bool "$CFG_ALLOW_WAN_ACCESS" || fail "invalid allow_wan_access"
+	validate_log_size "$CFG_NORA_LOG_MAX_SIZE" || fail "invalid nora_log_max_size"
+	validate_log_size "$CFG_PLUGIN_LOG_MAX_SIZE" || fail "invalid plugin_log_max_size"
 	CFG_RESOLVED_ARCH="$(resolve_architecture "$CFG_ARCHITECTURE")" || fail "unsupported auto architecture: $(uname -m 2>/dev/null)"
 
 	if [ "$CFG_AUTH_ENABLED" -eq 1 ] && [ -f "$CFG_HTPASSWD_FILE" ]; then
 		validate_htpasswd_line "$(cat "$CFG_HTPASSWD_FILE" 2>/dev/null)" || fail "invalid htpasswd file"
 	fi
+}
+
+log_file_for_type() {
+	local type="$1"
+	case "$type" in
+		nora) printf '%s/logs/nora.log' "$CFG_INSTALL_DIR" ;;
+		plugin) printf '%s/logs/plugin.log' "$CFG_INSTALL_DIR" ;;
+		*) fail "invalid log type" ;;
+	esac
+}
+
+log_max_size_for_type() {
+	local type="$1"
+	case "$type" in
+		nora) printf '%s' "$CFG_NORA_LOG_MAX_SIZE" ;;
+		plugin) printf '%s' "$CFG_PLUGIN_LOG_MAX_SIZE" ;;
+		*) fail "invalid log type" ;;
+	esac
+}
+
+read_logs() {
+	local type="$1" offset="$2" limit_bytes="$3" log_file max_size size start count truncated initial prev_byte
+	local tmp raw trimmed final raw_bytes trimmed_bytes content_bytes next_offset content last_byte
+	config_load_raw_values
+	validate_log_size "$CFG_NORA_LOG_MAX_SIZE" || CFG_NORA_LOG_MAX_SIZE='1048576'
+	validate_log_size "$CFG_PLUGIN_LOG_MAX_SIZE" || CFG_PLUGIN_LOG_MAX_SIZE='262144'
+
+	case "$type" in nora|plugin) ;; *) fail "invalid log type" ;; esac
+	limit_bytes="$(normalize_limit_bytes "$limit_bytes")"
+	log_file="$(log_file_for_type "$type")"
+	max_size="$(log_max_size_for_type "$type")"
+	truncate_log_if_needed "$log_file" "$max_size" "$type" >/dev/null 2>&1 || true
+
+	if [ ! -f "$log_file" ]; then
+		json_init
+		json_add_boolean success 1
+		json_add_string action logs
+		json_add_string type "$type"
+		json_add_string path "$log_file"
+		json_add_int offset 0
+		json_add_int next_offset 0
+		json_add_int size 0
+		json_add_int limit_bytes "$limit_bytes"
+		json_add_boolean truncated 0
+		json_add_boolean partial 0
+		json_add_string content ''
+		json_dump
+		return 0
+	fi
+
+	size="$(wc -c < "$log_file" 2>/dev/null | tr -d ' ')"
+	is_uint "$size" || size=0
+	truncated=0
+	initial=0
+	if ! is_uint "$offset"; then
+		initial=1
+		if [ "$size" -gt "$limit_bytes" ]; then
+			start=$((size - limit_bytes))
+		else
+			start=0
+		fi
+	elif [ "$offset" -gt "$size" ]; then
+		truncated=1
+		initial=1
+		if [ "$size" -gt "$limit_bytes" ]; then
+			start=$((size - limit_bytes))
+		else
+			start=0
+		fi
+	else
+		start="$offset"
+	fi
+
+	count=$((size - start))
+	[ "$count" -le "$limit_bytes" ] || count="$limit_bytes"
+	[ "$count" -gt 0 ] || count=0
+	tmp="/tmp/nora-log-read.$$"
+	raw="$tmp.raw"
+	trimmed="$tmp.trimmed"
+	final="$tmp.final"
+	rm -f "$raw" "$trimmed" "$final"
+	if [ "$count" -gt 0 ]; then
+		dd if="$log_file" of="$raw" bs=1 skip="$start" count="$count" 2>/dev/null || : > "$raw"
+	else
+		: > "$raw"
+	fi
+	raw_bytes="$(wc -c < "$raw" 2>/dev/null | tr -d ' ')"
+	is_uint "$raw_bytes" || raw_bytes=0
+
+	if [ "$initial" -eq 1 ] && [ "$start" -gt 0 ] && [ "$raw_bytes" -gt 0 ]; then
+		prev_byte="$(dd if="$log_file" bs=1 skip=$((start - 1)) count=1 2>/dev/null)"
+	fi
+
+	if [ "$initial" -eq 1 ] && [ "$start" -gt 0 ] && [ "$raw_bytes" -gt 0 ] && [ -n "$prev_byte" ]; then
+		sed '1d' "$raw" > "$trimmed" 2>/dev/null || : > "$trimmed"
+		trimmed_bytes="$(wc -c < "$trimmed" 2>/dev/null | tr -d ' ')"
+		is_uint "$trimmed_bytes" || trimmed_bytes=0
+		start=$((start + raw_bytes - trimmed_bytes))
+	else
+		mv -f "$raw" "$trimmed"
+	fi
+
+	trimmed_bytes="$(wc -c < "$trimmed" 2>/dev/null | tr -d ' ')"
+	is_uint "$trimmed_bytes" || trimmed_bytes=0
+	if [ "$trimmed_bytes" -gt 0 ]; then
+		last_byte="$(tail -c 1 "$trimmed" 2>/dev/null)"
+		if [ "$last_byte" = "$(printf '\n')" ]; then
+			cp "$trimmed" "$final" 2>/dev/null || : > "$final"
+		else
+			sed '$d' "$trimmed" > "$final" 2>/dev/null || : > "$final"
+		fi
+	else
+		: > "$final"
+	fi
+
+	content_bytes="$(wc -c < "$final" 2>/dev/null | tr -d ' ')"
+	is_uint "$content_bytes" || content_bytes=0
+	next_offset=$((start + content_bytes))
+	content="$(cat "$final" 2>/dev/null)"
+	rm -f "$raw" "$trimmed" "$final"
+
+	json_init
+	json_add_boolean success 1
+	json_add_string action logs
+	json_add_string type "$type"
+	json_add_string path "$log_file"
+	json_add_int offset "$start"
+	json_add_int next_offset "$next_offset"
+	json_add_int size "$size"
+	json_add_int limit_bytes "$limit_bytes"
+	json_add_boolean truncated "$truncated"
+	json_add_boolean partial "$( [ "$next_offset" -lt "$size" ] && printf 1 || printf 0 )"
+	json_add_string content "$content"
+	json_dump
 }
 
 ensure_directories() {
@@ -492,24 +733,30 @@ save_settings() {
 
 	case "$section" in
 		global)
-			local enabled install_dir host port public_url allow_wan_access
+			local enabled install_dir host port public_url allow_wan_access nora_log_max_size plugin_log_max_size
 			json_get_var enabled enabled
 			json_get_var install_dir install_dir
 			json_get_var port port
 			json_get_var public_url public_url
 			json_get_var allow_wan_access allow_wan_access
+			json_get_var nora_log_max_size nora_log_max_size
+			json_get_var plugin_log_max_size plugin_log_max_size
 
 			[ -n "$enabled" ] || enabled="$CFG_ENABLED"
 			[ -n "$install_dir" ] || install_dir="$CFG_INSTALL_DIR"
 			host="$(default_host)"
 			[ -n "$port" ] || port="$CFG_PORT"
 			[ -n "$allow_wan_access" ] || allow_wan_access="$CFG_ALLOW_WAN_ACCESS"
+			[ -n "$nora_log_max_size" ] || nora_log_max_size="$CFG_NORA_LOG_MAX_SIZE"
+			[ -n "$plugin_log_max_size" ] || plugin_log_max_size="$CFG_PLUGIN_LOG_MAX_SIZE"
 
 			enabled="$(normalize_bool "$enabled")" || fail "invalid enabled"
 			validate_abs_path "$install_dir" || fail "invalid install_dir"
 			validate_host "$host" || fail "invalid host"
 			validate_port "$port" || fail "invalid port"
 			allow_wan_access="$(normalize_bool "$allow_wan_access")" || fail "invalid allow_wan_access"
+			validate_log_size "$nora_log_max_size" || fail "invalid nora_log_max_size"
+			validate_log_size "$plugin_log_max_size" || fail "invalid plugin_log_max_size"
 
 			CFG_HOST="$host"
 			CFG_PORT="$port"
@@ -525,6 +772,8 @@ save_settings() {
 			set_uci_option port "$port"
 			set_uci_option public_url "$public_url"
 			set_uci_option allow_wan_access "$allow_wan_access"
+			set_uci_option nora_log_max_size "$nora_log_max_size"
+			set_uci_option plugin_log_max_size "$plugin_log_max_size"
 			changed=1
 			apply_firewall=1
 			;;
@@ -784,7 +1033,7 @@ detect_running() {
 }
 
 collect_status() {
-	local binary config_path installed running htpasswd_present detected_version latest_version
+	local binary config_path installed running htpasswd_present detected_version
 	config_load_raw_values
 	CFG_RESOLVED_ARCH="$(resolve_architecture "$CFG_ARCHITECTURE" 2>/dev/null || true)"
 	binary="$CFG_INSTALL_DIR/bin/nora"
@@ -800,8 +1049,6 @@ collect_status() {
 	if [ "$installed" -eq 1 ]; then
 		detected_version="$($binary --version 2>/dev/null || $binary version 2>/dev/null || true)"
 	fi
-	latest_version="$(detect_latest_version || true)"
-
 	json_init
 	json_add_boolean success 1
 	json_add_boolean enabled "$CFG_ENABLED"
@@ -829,7 +1076,6 @@ collect_status() {
 	json_add_string storage_path "$CFG_STORAGE_PATH"
 	json_add_string token_storage "$CFG_TOKEN_STORAGE"
 	json_add_string installed_version "$detected_version"
-	json_add_string latest_version "$latest_version"
 	json_dump
 }
 
@@ -845,6 +1091,8 @@ read_uci_config() {
 	json_add_int port "$CFG_PORT"
 	json_add_string public_url "$CFG_PUBLIC_URL"
 	json_add_boolean allow_wan_access "$CFG_ALLOW_WAN_ACCESS"
+	json_add_int nora_log_max_size "$CFG_NORA_LOG_MAX_SIZE"
+	json_add_int plugin_log_max_size "$CFG_PLUGIN_LOG_MAX_SIZE"
 	json_close_object
 
 	json_add_object auth
@@ -871,7 +1119,7 @@ read_uci_config() {
 }
 
 usage() {
-	fail "usage: nora-control {status|read-uci-config|install|upgrade|upload-binary|render-nora-config|read-nora-config|save-settings|start|stop|restart|set-htpasswd|firewall-apply}"
+	fail "usage: nora-control {status|latest-version|read-uci-config|logs|install|upgrade|upload-binary|render-nora-config|read-nora-config|save-settings|start|stop|restart|set-htpasswd|firewall-apply}"
 }
 
 main() {
@@ -879,8 +1127,14 @@ main() {
 		status)
 			collect_status
 			;;
+		latest-version)
+			collect_latest_version
+			;;
 		read-uci-config)
 			read_uci_config
+			;;
+		logs)
+			read_logs "$2" "$3" "$4"
 			;;
 		install)
 			download_binary "${2:-latest}" "install"

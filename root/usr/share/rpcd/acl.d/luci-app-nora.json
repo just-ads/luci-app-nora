@@ -4,7 +4,7 @@
 		"read": {
 			"uci": [ "nora" ],
 			"ubus": {
-				"luci.nora": [ "status", "read_uci_config", "read_nora_config" ]
+				"luci.nora": [ "status", "latest_version", "read_uci_config", "read_nora_config", "logs" ]
 			}
 		},
 		"write": {

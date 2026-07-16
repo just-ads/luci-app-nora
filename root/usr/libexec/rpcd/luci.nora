@@ -8,6 +8,7 @@ list_methods() {
 	cat <<'EOF'
 {
 	"status": {},
+	"latest_version": {},
 	"read_uci_config": {},
 	"install": {
 		"version": "String"
@@ -18,6 +19,11 @@ list_methods() {
 	},
 	"render_nora_config": {},
 	"read_nora_config": {},
+	"logs": {
+		"type": "String",
+		"offset": "Integer",
+		"limit_bytes": "Integer"
+	},
 	"save_settings": {
 		"section": "String",
 		"settings": "String"
@@ -55,6 +61,9 @@ handle_call() {
 		status)
 			call_control status
 			;;
+		latest_version)
+			call_control latest-version
+			;;
 		read_uci_config)
 			call_control read-uci-config
 			;;
@@ -76,6 +85,13 @@ handle_call() {
 			;;
 		read_nora_config)
 			call_control read-nora-config
+			;;
+		logs)
+			local type offset limit_bytes
+			json_get_var type type
+			json_get_var offset offset
+			json_get_var limit_bytes limit_bytes
+			call_control logs "$type" "$offset" "$limit_bytes"
 			;;
 		save_settings)
 			local section settings_json

@@ -35,12 +35,6 @@
 	border-color: var(--primary, #4a90e2);
 }
 
-.nora-tab-btn:focus,
-.nora-tab-btn:focus-visible {
-	border-color: var(--primary, #4a90e2);
-	box-shadow: 0 0 0 2px var(--primary, #4a90e2);
-}
-
 .nora-tab-btn[aria-selected="true"] {
 	border-color: var(--primary, #4a90e2);
 	font-weight: 600;
@@ -140,6 +134,52 @@
 	margin-bottom: 1rem;
 	font-family: ui-monospace, SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
 	white-space: pre;
+}
+
+.nora-log-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .75rem;
+	align-items: center;
+	margin-bottom: 1rem;
+}
+
+.nora-log-viewer {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 32rem;
+	max-height: 48rem;
+	overflow: auto;
+	padding: .75rem;
+	border: 1px solid var(--border-color-medium, #c9d0d6);
+	border-radius: 8px;
+	background: var(--background-color-primary, #fff);
+	font-family: ui-monospace, SFMono-Regular, Consolas, Liberation Mono, Menlo, monospace;
+	font-size: .875rem;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.nora-log-line {
+	padding: .125rem 0;
+}
+
+.nora-log-level-error,
+.nora-log-level-fatal {
+	color: #b03030;
+}
+
+.nora-log-level-warn {
+	color: #b06a00;
+}
+
+.nora-log-level-info {
+	color: #2d7d46;
+}
+
+.nora-log-level-debug,
+.nora-log-level-trace {
+	color: var(--text-color-secondary, #666);
 }
 
 .nora-map-footer {

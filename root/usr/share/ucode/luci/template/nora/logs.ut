@@ -1,0 +1,165 @@
+{% include('header') %}
+
+<link id="nora-ui-style" rel="stylesheet" href="{{ resource }}/nora/css/nora.css?v={{ pkgs_update_time }}">
+<script src="{{ resource }}/nora/nora.js?v={{ pkgs_update_time }}"></script>
+
+<div id="nora-logs-view" class="nora-template-view">
+	<h2>{{ _("Nora Logs") }}</h2>
+
+	<div class="nora-tabs" role="tablist">
+		<button class="nora-tab-btn" type="button" data-log-type="nora" aria-selected="true">{{ _("Nora Logs") }}</button>
+		<button class="nora-tab-btn" type="button" data-log-type="plugin" aria-selected="false">{{ _("Plugin Logs") }}</button>
+	</div>
+
+	<div class="nora-card">
+		<div class="nora-log-toolbar">
+			<button class="btn cbi-button cbi-button-neutral" type="button" id="nora-log-refresh">{{ _("Refresh") }}</button>
+			<label><input type="checkbox" id="nora-log-auto" checked> {{ _("Auto refresh") }}</label>
+			<label>{{ _("Limit") }}
+				<select id="nora-log-limit" class="cbi-input-select">
+					<option value="65536">64 KiB</option>
+					<option value="131072">128 KiB</option>
+					<option value="262144">256 KiB</option>
+				</select>
+			</label>
+			<span class="nora-meta" id="nora-log-meta">-</span>
+		</div>
+		<div id="nora-log-output" class="nora-log-viewer" aria-live="polite"></div>
+	</div>
+</div>
+
+{% include('footer') %}
+
+<script>
+'use strict';
+
+Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
+	var rpc = mods[0], ui = mods[1];
+	var callLogs = rpc.declare({ object: 'luci.nora', method: 'logs', params: [ 'type', 'offset', 'limit_bytes' ], expect: { '': {} } });
+	var activeType = 'nora';
+	var timer = null;
+	var maxRows = 5000;
+	var state = {
+		nora: { offset: null, loading: false, loaded: false },
+		plugin: { offset: null, loading: false, loaded: false }
+	};
+	var output = document.getElementById('nora-log-output');
+	var meta = document.getElementById('nora-log-meta');
+	var auto = document.getElementById('nora-log-auto');
+	var limit = document.getElementById('nora-log-limit');
+
+	function levelClass(level) {
+		return 'nora-log-level-' + String(level || 'raw').toLowerCase();
+	}
+
+	function formatEntry(line) {
+		var entry, fields, message, level, ts, target;
+		try {
+			entry = JSON.parse(line);
+			fields = entry.fields || {};
+			message = fields.message || line;
+			level = entry.level || 'INFO';
+			ts = entry.timestamp || '-';
+			target = entry.target || '-';
+			return { text: ts + ' | ' + level + ' | ' + target + ' | ' + message, level: level };
+		} catch (e) {
+			return { text: 'RAW | ' + line, level: 'raw' };
+		}
+	}
+
+	function renderLine(line) {
+		var formatted, row;
+		formatted = formatEntry(line);
+		row = document.createElement('div');
+		row.className = 'nora-log-line ' + levelClass(formatted.level);
+		row.textContent = formatted.text;
+		return row;
+	}
+
+	function appendContent(content, replace) {
+		var lines = String(content || '').split('\n').filter(function(line) { return !!line; });
+		var oldScrollHeight = output.scrollHeight;
+		var oldScrollTop = output.scrollTop;
+		var keepViewport = !replace && oldScrollTop > 0;
+		var i, row;
+		if (replace)
+			output.textContent = '';
+		if (replace) {
+			for (i = lines.length - 1; i >= 0; i--)
+				output.appendChild(renderLine(lines[i]));
+		} else {
+			for (i = 0; i < lines.length; i++) {
+				row = renderLine(lines[i]);
+				output.insertBefore(row, output.firstChild);
+			}
+		}
+		while (output.childNodes.length > maxRows)
+			output.removeChild(output.lastChild);
+		if (keepViewport)
+			output.scrollTop = oldScrollTop + (output.scrollHeight - oldScrollHeight);
+		else
+			output.scrollTop = 0;
+	}
+
+	function refresh(forceInitial) {
+		var st = state[activeType];
+		var offset = (forceInitial || st.offset == null) ? -1 : st.offset;
+		if (st.loading)
+			return Promise.resolve();
+		st.loading = true;
+		return callLogs(activeType, offset, parseInt(limit.value, 10) || 65536).then(function(r) {
+			if (!r || r.success === false)
+				throw new Error((r && r.error) || '{{ _("Failed to load logs") }}');
+			appendContent(r.content || '', forceInitial || !!r.truncated || !st.loaded);
+			st.offset = r.next_offset != null ? r.next_offset : st.offset;
+			st.loaded = true;
+			meta.textContent = '{{ _("Offset") }}: ' + st.offset + ' / ' + (r.size || 0) + (r.truncated ? ' · {{ _("Log was truncated") }}' : '');
+		}).catch(function(e) {
+			Nora.notify(ui, String(e), 'danger');
+		}).finally(function() {
+			st.loading = false;
+		});
+	}
+
+	function stopPolling() {
+		if (timer) {
+			window.clearInterval(timer);
+			timer = null;
+		}
+	}
+
+	function startPolling() {
+		stopPolling();
+		if (!auto.checked || document.hidden)
+			return;
+		timer = window.setInterval(function() { refresh(false); }, 3000);
+	}
+
+	function switchType(type) {
+		activeType = type;
+		document.querySelectorAll('[data-log-type]').forEach(function(btn) {
+			btn.setAttribute('aria-selected', btn.getAttribute('data-log-type') === type ? 'true' : 'false');
+		});
+		output.textContent = '';
+		refresh(true).then(startPolling);
+	}
+
+	document.querySelectorAll('[data-log-type]').forEach(function(btn) {
+		btn.addEventListener('click', function() { switchType(btn.getAttribute('data-log-type')); });
+	});
+	document.getElementById('nora-log-refresh').addEventListener('click', function() { refresh(true); });
+	auto.addEventListener('change', startPolling);
+	limit.addEventListener('change', function() {
+		state[activeType].offset = null;
+		state[activeType].loaded = false;
+		refresh(true);
+	});
+	document.addEventListener('visibilitychange', function() {
+		if (document.hidden)
+			stopPolling();
+		else
+			refresh(false).then(startPolling);
+	});
+	refresh(true).then(startPolling);
+});
+</script>

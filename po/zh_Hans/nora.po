@@ -28,6 +28,45 @@ msgstr "公共 URL"
 msgid "Leave empty to omit Nora public_url; the service listens on the router LAN IP by default."
 msgstr "留空则不写入 Nora public_url；服务默认监听路由器 LAN IP。"
 
+msgid "Nora log max size"
+msgstr "Nora 日志最大大小"
+
+msgid "Maximum size in bytes before nora.log is truncated."
+msgstr "nora.log 被截断前允许的最大字节数。"
+
+msgid "Plugin log max size"
+msgstr "插件日志最大大小"
+
+msgid "Maximum size in bytes before plugin.log is truncated."
+msgstr "plugin.log 被截断前允许的最大字节数。"
+
+msgid "Logs"
+msgstr "日志"
+
+msgid "Nora Logs"
+msgstr "Nora 日志"
+
+msgid "Plugin Logs"
+msgstr "插件日志"
+
+msgid "Refresh"
+msgstr "刷新"
+
+msgid "Auto refresh"
+msgstr "自动刷新"
+
+msgid "Limit"
+msgstr "限制"
+
+msgid "Failed to load logs"
+msgstr "加载日志失败"
+
+msgid "Offset"
+msgstr "偏移"
+
+msgid "Log was truncated"
+msgstr "日志已被截断"
+
 msgid "Authentication settings"
 msgstr "认证设置"
 
