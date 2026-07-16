@@ -1,6 +1,6 @@
 # luci-app-nora
 
-用于在 OpenWrt 上部署和管理 Nora 私有 npm Registry 的 LuCI 应用。
+用于在 OpenWrt 上部署和管理 Nora 的 LuCI 应用。
 
 ## 功能特性
 
