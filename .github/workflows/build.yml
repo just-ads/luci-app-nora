@@ -80,6 +80,7 @@ jobs:
           mkdir -p openwrt-sdk/package/${PACKAGE_NAME}
           rsync -a \
             --exclude='.git' \
+            --exclude='.github' \
             --exclude='openwrt-sdk' \
             --exclude='openwrt-sdk-*' \
             --exclude='artifacts' \
