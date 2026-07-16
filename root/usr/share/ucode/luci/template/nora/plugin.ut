@@ -29,13 +29,6 @@
 		</div>
 
 		<div class="cbi-value">
-			<label class="cbi-value-title" for="cfg-host">{{ _("Host") }}</label>
-			<div class="cbi-value-field">
-				<input id="cfg-host" type="text" class="cbi-input-text" name="cbid.nora.config.host">
-			</div>
-		</div>
-
-		<div class="cbi-value">
 			<label class="cbi-value-title" for="cfg-port">{{ _("Port") }}</label>
 			<div class="cbi-value-field">
 				<input id="cfg-port" type="text" class="cbi-input-text" name="cbid.nora.config.port">
@@ -48,7 +41,7 @@
 				<div>
 					<input id="cfg-public_url" type="text" class="cbi-input-text" name="cbid.nora.config.public_url" placeholder="https://registry.example.com">
 				</div>
-				<div class="cbi-value-description">{{ _("When host is 0.0.0.0 and this is empty, Nora uses the OpenWrt LAN IP address as the default public URL.") }}</div>
+				<div class="cbi-value-description">{{ _("Leave empty to omit Nora public_url; the service listens on the router LAN IP by default.") }}</div>
 			</div>
 		</div>
 
@@ -62,8 +55,9 @@
 				<div class="cbi-value-description">{{ _("When enabled, Nora opens its port on the firewall WAN zone. When disabled, Nora removes only its own firewall rule.") }}</div>
 			</div>
 		</div>
-
-		<button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-global">{{ _("Save & Apply") }}</button>
+		<div class="nora-section-actions">
+		    <button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-global">{{ _("Save & Apply") }}</button>
+		</div>
 	</form>
 
 	<form id="nora-p-form-auth" class="cbi-section-node">
@@ -102,8 +96,9 @@
 				<input id="cfg-token_storage" type="text" class="cbi-input-text" name="cbid.nora.config.token_storage">
 			</div>
 		</div>
-
-		<button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-auth">{{ _("Save & Apply") }}</button>
+		<div class="nora-section-actions">
+		    <button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-auth">{{ _("Save & Apply") }}</button>
+		</div>
 	</form>
 
 	<div class="cbi-value nora-htpasswd-row" id="nora-htpasswd-row">
@@ -129,7 +124,7 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var callSaveSettings = rpc.declare({ object: 'luci.nora', method: 'save_settings', params: [ 'section', 'settings' ], expect: { '': {} } });
 	var callReadUciConfig = rpc.declare({ object: 'luci.nora', method: 'read_uci_config', expect: { '': {} } });
 
-	var GLOBAL_KEYS = ['enabled','install_dir','host','port','public_url','allow_wan_access'];
+	var GLOBAL_KEYS = ['enabled','install_dir','port','public_url','allow_wan_access'];
 	var AUTH_KEYS = ['auth_enabled','anonymous_read','htpasswd_file','token_storage'];
 
 	function bindSaveBtn(btnId, section, formId, keys) {

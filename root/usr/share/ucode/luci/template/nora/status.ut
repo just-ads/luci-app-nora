@@ -18,12 +18,16 @@
 					<h3>{{ _("Service actions") }}</h3>
 					<div class="nora-actions">
 						<button class="btn cbi-button cbi-button-neutral" type="button" id="nora-btn-refresh" disabled>{{ _("Refresh status") }}</button>
-						<a class="btn cbi-button cbi-button-action" id="nora-link-ui" href="#" target="_blank" rel="noopener noreferrer" style="display:none">{{ _("Open Nora UI") }}</a>
 						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-install" style="display:none">{{ _("Install") }}</button>
 						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-start" style="display:none">{{ _("Start") }}</button>
 						<button class="btn cbi-button cbi-button-negative" type="button" id="nora-btn-stop" style="display:none">{{ _("Stop") }}</button>
 						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-restart" style="display:none">{{ _("Restart") }}</button>
 					</div>
+				</div>
+				<div class="nora-card" id="nora-ui-card" style="display:none">
+					<h3>{{ _("Nora UI address") }}</h3>
+					<div class="nora-value"><a id="nora-link-ui" class="nora-url" href="#" target="_blank" rel="noopener noreferrer">-</a></div>
+					<div class="nora-meta">{{ _("Generated from the current LuCI page hostname.") }}</div>
 				</div>
 			</div>
 		</div>
@@ -49,15 +53,10 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	function sc(kind) { return kind === 'ok' ? 'nora-status-ok' : kind === 'warn' ? 'nora-status-warn' : 'nora-status-stop'; }
 
 	function noraUiUrl(s) {
-		var host = s.host || window.location.hostname;
+		var host = window.location.hostname;
 		var port = s.port || '4873';
 
-		if (s.public_url)
-			return s.public_url;
-
-		if (host === '0.0.0.0' || host === '::')
-			host = window.location.hostname;
-		else if (host.indexOf(':') > -1 && host.charAt(0) !== '[')
+		if (host.indexOf(':') > -1 && host.charAt(0) !== '[')
 			host = '[' + host + ']';
 
 		return window.location.protocol + '//' + host + ':' + port;
@@ -111,8 +110,11 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 			elA.className = 'nora-value ' + sc(authEnabled ? (s.htpasswd_present ? 'ok' : 'warn') : 'warn');
 
 			var uiLink = document.getElementById('nora-link-ui');
-			uiLink.href = noraUiUrl(s);
-			uiLink.style.display = installed ? '' : 'none';
+			var uiCard = document.getElementById('nora-ui-card');
+			var uiUrl = noraUiUrl(s);
+			uiLink.href = uiUrl;
+			uiLink.textContent = uiUrl;
+			uiCard.style.display = installed ? '' : 'none';
 
 			document.getElementById('nora-btn-install').style.display = installed ? 'none' : '';
 			document.getElementById('nora-btn-start').style.display = (installed && !running) ? '' : 'none';

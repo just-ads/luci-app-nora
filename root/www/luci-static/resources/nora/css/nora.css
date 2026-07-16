@@ -74,6 +74,10 @@
 	word-break: break-word;
 }
 
+.nora-url {
+	word-break: break-all;
+}
+
 .nora-meta {
 	color: var(--text-color-secondary, #666);
 	margin-top: .375rem;
@@ -100,6 +104,12 @@
 
 .nora-actions .btn {
 	min-height: 20px;
+}
+
+.nora-section-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .75rem;
 }
 
 .nora-note {

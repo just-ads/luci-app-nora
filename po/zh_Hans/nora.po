@@ -19,17 +19,14 @@ msgstr "架构"
 msgid "Auto detect"
 msgstr "自动检测"
 
-msgid "Host"
-msgstr "主机"
-
 msgid "Port"
 msgstr "端口"
 
 msgid "Public URL"
 msgstr "公共 URL"
 
-msgid "When host is 0.0.0.0 and this is empty, Nora uses the OpenWrt LAN IP address as the default public URL."
-msgstr "当 host 为 0.0.0.0 且此项留空时，Nora 会使用 OpenWrt LAN IP 地址作为默认公共 URL。"
+msgid "Leave empty to omit Nora public_url; the service listens on the router LAN IP by default."
+msgstr "留空则不写入 Nora public_url；服务默认监听路由器 LAN IP。"
 
 msgid "Authentication settings"
 msgstr "认证设置"
@@ -124,8 +121,11 @@ msgstr "已启用，等待上传 htpasswd"
 msgid "Refresh status"
 msgstr "刷新状态"
 
-msgid "Open Nora UI"
-msgstr "打开 Nora UI"
+msgid "Nora UI address"
+msgstr "Nora UI 地址"
+
+msgid "Generated from the current LuCI page hostname."
+msgstr "使用当前 LuCI 页面的 hostname 生成。"
 
 msgid "Refreshing..."
 msgstr "刷新中..."

@@ -44,8 +44,9 @@
 					</select>
 				</div>
 			</div>
-
-			<button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-version">{{ _("Save & Apply") }}</button>
+			<div class="nora-section-actions">
+			    <button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-version">{{ _("Save & Apply") }}</button>
+			</div>
 		</form>
 	</div>
 </div>

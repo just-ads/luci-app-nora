@@ -49,8 +49,9 @@
 					<input id="cfg-storage_path" type="text" class="cbi-input-text" name="cbid.nora.config.storage_path">
 				</div>
 			</div>
-
-			<button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-registry">{{ _("Save & Apply") }}</button>
+			<div class="nora-section-actions">
+			    <button type="button" class="btn cbi-button cbi-button-save" id="nora-btn-save-registry">{{ _("Save & Apply") }}</button>
+			</div>
 		</form>
 	</div>
 </div>

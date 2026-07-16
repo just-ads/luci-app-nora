@@ -141,23 +141,30 @@ detect_openwrt_ip() {
 default_public_url() {
 	local ip
 
-	ip="$(detect_openwrt_ip)" || return 1
+	ip="$(default_host)"
 	printf 'http://%s:%s' "$ip" "$CFG_PORT"
+}
+
+default_host() {
+	detect_openwrt_ip || printf '%s' '192.168.1.1'
+}
+
+normalize_host() {
+	case "$CFG_HOST" in
+		''|0.0.0.0)
+			CFG_HOST="$(default_host)"
+			;;
+	esac
 }
 
 normalize_public_url() {
 	CFG_PUBLIC_URL="$(trim_value "$CFG_PUBLIC_URL")"
 
-	if [ "$CFG_HOST" = "0.0.0.0" ]; then
-		case "$CFG_PUBLIC_URL" in
-			''|0.0.0.0|0.0.0.0:*|http://0.0.0.0|http://0.0.0.0:*|https://0.0.0.0|https://0.0.0.0:*)
-				CFG_PUBLIC_URL="$(default_public_url)" || fail "public_url is required when host is 0.0.0.0 and OpenWrt LAN IP cannot be detected"
-				return 0
-				;;
-		esac
-	fi
-
 	case "$CFG_PUBLIC_URL" in
+		0.0.0.0|0.0.0.0:*|http://0.0.0.0|http://0.0.0.0:*|https://0.0.0.0|https://0.0.0.0:*)
+			CFG_PUBLIC_URL="$(default_public_url)"
+			return 0
+			;;
 		''|http://*|https://*) ;;
 		*) CFG_PUBLIC_URL="http://$CFG_PUBLIC_URL" ;;
 	esac
@@ -237,7 +244,7 @@ config_load_raw_values() {
 	config_get CFG_INSTALL_DIR "$UCI_SECTION" install_dir '/opt/nora'
 	config_get CFG_VERSION "$UCI_SECTION" version 'latest'
 	config_get CFG_ARCHITECTURE "$UCI_SECTION" architecture 'auto'
-	config_get CFG_HOST "$UCI_SECTION" host '0.0.0.0'
+	config_get CFG_HOST "$UCI_SECTION" host "$(default_host)"
 	config_get CFG_PORT "$UCI_SECTION" port '4873'
 	config_get CFG_PUBLIC_URL "$UCI_SECTION" public_url ''
 	config_get CFG_STORAGE_PATH "$UCI_SECTION" storage_path "$CFG_INSTALL_DIR/data/storage"
@@ -250,6 +257,7 @@ config_load_raw_values() {
 	config_get CFG_NPM_PROXY_TIMEOUT "$UCI_SECTION" npm_proxy_timeout '30'
 	config_get CFG_NPM_METADATA_TTL "$UCI_SECTION" npm_metadata_ttl '300'
 	config_get_bool CFG_ALLOW_WAN_ACCESS "$UCI_SECTION" allow_wan_access 0
+	normalize_host
 }
 
 config_load_values() {
@@ -487,16 +495,14 @@ save_settings() {
 			local enabled install_dir host port public_url allow_wan_access
 			json_get_var enabled enabled
 			json_get_var install_dir install_dir
-			json_get_var host host
 			json_get_var port port
 			json_get_var public_url public_url
 			json_get_var allow_wan_access allow_wan_access
 
 			[ -n "$enabled" ] || enabled="$CFG_ENABLED"
 			[ -n "$install_dir" ] || install_dir="$CFG_INSTALL_DIR"
-			[ -n "$host" ] || host="$CFG_HOST"
+			host="$(default_host)"
 			[ -n "$port" ] || port="$CFG_PORT"
-			[ -n "$public_url" ] || public_url="$CFG_PUBLIC_URL"
 			[ -n "$allow_wan_access" ] || allow_wan_access="$CFG_ALLOW_WAN_ACCESS"
 
 			enabled="$(normalize_bool "$enabled")" || fail "invalid enabled"
