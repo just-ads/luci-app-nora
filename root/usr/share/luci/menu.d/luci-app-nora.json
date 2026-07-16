@@ -34,7 +34,7 @@
 		}
 	},
 	"admin/services/nora/config/registries": {
-		"title": "Registries",
+		"title": "Npm Registry",
 		"order": 10,
 		"action": {
 			"type": "template",

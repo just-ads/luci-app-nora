@@ -1,6 +1,7 @@
 {% include('header') %}
 
 <link id="nora-ui-style" rel="stylesheet" href="{{ resource }}/nora/css/nora.css?v={{ pkgs_update_time }}">
+<script src="{{ resource }}/nora/nora.js?v={{ pkgs_update_time }}"></script>
 
 <div id="nora-version-view" class="nora-template-view">
 	<div id="nora-v-spinner" class="spinning">{{ _('Loading Nora…') }}</div>
@@ -29,7 +30,7 @@
 			</div>
 		</div>
 
-		<form id="nora-v-form">
+		<form id="nora-v-form" class="cbi-section-node">
 			<h3>{{ _("Version settings") }}</h3>
 
 			<div class="cbi-value">
@@ -65,7 +66,6 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var callUploadBinary = rpc.declare({ object: 'luci.nora', method: 'upload_binary', params: [ 'path' ], expect: { '': {} } });
 	var callSaveSettings = rpc.declare({ object: 'luci.nora', method: 'save_settings', params: [ 'section', 'settings' ], expect: { '': {} } });
 
-	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
 	function sc(kind) { return kind === 'ok' ? 'nora-status-ok' : kind === 'warn' ? 'nora-status-warn' : 'nora-status-stop'; }
 
 	function bindBtn(id, label, busy, handler) {
@@ -75,9 +75,9 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		btn.addEventListener('click', function(ev) {
 			btn.disabled = true; btn.textContent = busy;
 			Promise.resolve(handler(ev)).then(function(r) {
-				notify((r && (r.message || r.error || r.detected_version || r.version)) || label);
+				Nora.notify(ui, (r && (r.message || r.error || r.detected_version || r.version)) || label);
 				return refreshSummary();
-			}).catch(function(e) { notify(String(e), 'danger'); })
+			}).catch(function(e) { Nora.notify(ui, String(e), 'danger'); })
 			.finally(function() { btn.disabled = false; btn.textContent = label; });
 		});
 	}
@@ -100,11 +100,10 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	document.getElementById('nora-btn-save-version').addEventListener('click', function() {
 		var btn = this;
 		btn.disabled = true; btn.textContent = '{{ _("Saving...") }}';
-		var fd = new FormData(document.getElementById('nora-v-form'));
-		var obj = { architecture: fd.get('cbid.nora.config.architecture') || '' };
+		var obj = Nora.collectSection('nora-v-form', ['architecture']);
 		callSaveSettings('version', JSON.stringify(obj))
-			.then(function(r) { notify((r && (r.message || r.error)) || '{{ _("Save & Apply") }}'); })
-			.catch(function(e) { notify(String(e), 'danger'); })
+			.then(function(r) { Nora.notify(ui, (r && (r.message || r.error)) || '{{ _("Save & Apply") }}'); })
+			.catch(function(e) { Nora.notify(ui, String(e), 'danger'); })
 			.finally(function() { btn.disabled = false; btn.textContent = '{{ _("Save & Apply") }}'; });
 	});
 

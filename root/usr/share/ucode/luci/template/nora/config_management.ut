@@ -1,6 +1,7 @@
 {% include('header') %}
 
 <link id="nora-ui-style" rel="stylesheet" href="{{ resource }}/nora/css/nora.css?v={{ pkgs_update_time }}">
+<script src="{{ resource }}/nora/nora.js?v={{ pkgs_update_time }}"></script>
 
 <div id="nora-config-management-view" class="nora-template-view">
 	<div id="nora-cm-spinner" class="spinning">{{ _('Loading Nora…') }}</div>
@@ -31,8 +32,6 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var callReadNoraConfig = rpc.declare({ object: 'luci.nora', method: 'read_nora_config', expect: { '': {} } });
 	var callRenderNoraConfig = rpc.declare({ object: 'luci.nora', method: 'render_nora_config', expect: { '': {} } });
 
-	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
-
 	function bindBtn(id, label, busy, handler) {
 		var btn = document.getElementById(id);
 		if (!btn) return;
@@ -40,8 +39,8 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		btn.addEventListener('click', function() {
 			btn.disabled = true; btn.textContent = busy;
 			Promise.resolve(handler()).then(function(r) {
-				notify((r && (r.message || r.error)) || label);
-			}).catch(function(e) { notify(String(e), 'danger'); })
+				Nora.notify(ui, (r && (r.message || r.error)) || label);
+			}).catch(function(e) { Nora.notify(ui, String(e), 'danger'); })
 			.finally(function() { btn.disabled = false; btn.textContent = label; });
 		});
 	}
@@ -58,6 +57,6 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		});
 	});
 
-	loadConfig().catch(function(e) { notify(String(e), 'danger'); });
+	loadConfig().catch(function(e) { Nora.notify(ui, String(e), 'danger'); });
 });
 </script>

@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-nora
-PKG_VERSION:=1.0.2
+PKG_VERSION:=1.0.3
 PKG_RELEASE:=1
 
 LUCI_TITLE:=LuCI support for Nora private npm registry
@@ -24,6 +24,8 @@ fi
 chmod 0600 "$${default_htpasswd}" >/dev/null 2>&1 || true
 
 if [ -z "$${IPKG_INSTROOT}" ]; then
+	/etc/init.d/nora stop >/dev/null 2>&1 || true
+	/etc/init.d/nora disable >/dev/null 2>&1 || true
 	if [ -x /usr/libexec/nora-control ]; then
 		render_output="$$(/usr/libexec/nora-control render-nora-config 2>&1)" || logger -t luci-app-nora "failed to render Nora config during postinst: $${render_output}"
 	fi
@@ -41,6 +43,9 @@ define Package/$(PKG_NAME)/prerm
 if [ "$${1:-remove}" != "upgrade" ] && [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/nora ]; then
 	/etc/init.d/nora stop >/dev/null 2>&1 || true
 	/etc/init.d/nora disable >/dev/null 2>&1 || true
+	uci -q delete firewall.nora >/dev/null 2>&1 || true
+	uci commit firewall >/dev/null 2>&1 || true
+	/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true
 fi
 
 exit 0
@@ -50,6 +55,7 @@ define Package/$(PKG_NAME)/postrm
 #!/bin/sh
 
 if [ "$${1:-remove}" != "upgrade" ]; then
+	rm -f "$${IPKG_INSTROOT}/etc/init.d/nora" >/dev/null 2>&1 || true
 	rm -f "$${IPKG_INSTROOT}/etc/config/nora" >/dev/null 2>&1 || true
 	rm -f "$${IPKG_INSTROOT}"/etc/rc.d/*nora >/dev/null 2>&1 || true
 

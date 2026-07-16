@@ -50,6 +50,14 @@ is_bool() {
 	esac
 }
 
+normalize_bool() {
+	case "$1" in
+		1|true|TRUE|on|ON|yes|YES) printf 1 ;;
+		0|false|FALSE|off|OFF|no|NO) printf 0 ;;
+		*) return 1 ;;
+	esac
+}
+
 is_uint() {
 	case "$1" in
 		''|*[!0-9]*) return 1 ;;
@@ -466,7 +474,7 @@ read_nora_config() {
 
 save_settings() {
 	local section="$1"
-	local settings_json changed=0
+	local settings_json changed=0 apply_firewall=0
 
 	settings_json="$(cat)" || fail "failed to read settings"
 	config_load_raw_values
@@ -491,11 +499,11 @@ save_settings() {
 			[ -n "$public_url" ] || public_url="$CFG_PUBLIC_URL"
 			[ -n "$allow_wan_access" ] || allow_wan_access="$CFG_ALLOW_WAN_ACCESS"
 
-			is_bool "$enabled" || fail "invalid enabled"
+			enabled="$(normalize_bool "$enabled")" || fail "invalid enabled"
 			validate_abs_path "$install_dir" || fail "invalid install_dir"
 			validate_host "$host" || fail "invalid host"
 			validate_port "$port" || fail "invalid port"
-			is_bool "$allow_wan_access" || fail "invalid allow_wan_access"
+			allow_wan_access="$(normalize_bool "$allow_wan_access")" || fail "invalid allow_wan_access"
 
 			CFG_HOST="$host"
 			CFG_PORT="$port"
@@ -512,6 +520,7 @@ save_settings() {
 			set_uci_option public_url "$public_url"
 			set_uci_option allow_wan_access "$allow_wan_access"
 			changed=1
+			apply_firewall=1
 			;;
 		auth)
 			local auth_enabled anonymous_read htpasswd_file token_storage
@@ -525,8 +534,8 @@ save_settings() {
 			[ -n "$htpasswd_file" ] || htpasswd_file="$CFG_HTPASSWD_FILE"
 			[ -n "$token_storage" ] || token_storage="$CFG_TOKEN_STORAGE"
 
-			is_bool "$auth_enabled" || fail "invalid auth_enabled"
-			is_bool "$anonymous_read" || fail "invalid anonymous_read"
+			auth_enabled="$(normalize_bool "$auth_enabled")" || fail "invalid auth_enabled"
+			anonymous_read="$(normalize_bool "$anonymous_read")" || fail "invalid anonymous_read"
 			validate_abs_path "$htpasswd_file" || fail "invalid htpasswd_file"
 			validate_abs_path "$token_storage" || fail "invalid token_storage"
 
@@ -551,7 +560,7 @@ save_settings() {
 			[ -n "$npm_metadata_ttl" ] || npm_metadata_ttl="$CFG_NPM_METADATA_TTL"
 			[ -n "$storage_path" ] || storage_path="$CFG_STORAGE_PATH"
 
-			is_bool "$npm_enabled" || fail "invalid npm_enabled"
+			npm_enabled="$(normalize_bool "$npm_enabled")" || fail "invalid npm_enabled"
 			validate_url_or_empty "$npm_proxy" || fail "invalid npm_proxy"
 			validate_timeout "$npm_proxy_timeout" || fail "invalid npm_proxy_timeout"
 			validate_timeout "$npm_metadata_ttl" || fail "invalid npm_metadata_ttl"
@@ -580,7 +589,11 @@ save_settings() {
 			;;
 	esac
 
-	[ "$changed" -eq 1 ] && { commit_uci_config; render_nora_config >/dev/null 2>&1 || fail "settings saved but failed to render Nora config"; }
+	if [ "$changed" -eq 1 ]; then
+		commit_uci_config
+		render_nora_config >/dev/null 2>&1 || fail "settings saved but failed to render Nora config"
+		[ "$apply_firewall" -eq 0 ] || firewall_apply >/dev/null 2>&1 || fail "settings saved but failed to apply firewall"
+	fi
 	ok_message "save-settings" "settings saved"
 }
 

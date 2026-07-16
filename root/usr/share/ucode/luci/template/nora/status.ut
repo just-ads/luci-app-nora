@@ -1,6 +1,7 @@
 {% include('header') %}
 
 <link id="nora-ui-style" rel="stylesheet" href="{{ resource }}/nora/css/nora.css?v={{ pkgs_update_time }}">
+<script src="{{ resource }}/nora/nora.js?v={{ pkgs_update_time }}"></script>
 
 <div id="nora-status-view" class="nora-template-view">
 	<div id="nora-status-spinner" class="spinning">{{ _('Loading Nora…') }}</div>
@@ -17,6 +18,7 @@
 					<h3>{{ _("Service actions") }}</h3>
 					<div class="nora-actions">
 						<button class="btn cbi-button cbi-button-neutral" type="button" id="nora-btn-refresh" disabled>{{ _("Refresh status") }}</button>
+						<a class="btn cbi-button cbi-button-action" id="nora-link-ui" href="#" target="_blank" rel="noopener noreferrer" style="display:none">{{ _("Open Nora UI") }}</a>
 						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-install" style="display:none">{{ _("Install") }}</button>
 						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-start" style="display:none">{{ _("Start") }}</button>
 						<button class="btn cbi-button cbi-button-negative" type="button" id="nora-btn-stop" style="display:none">{{ _("Stop") }}</button>
@@ -44,8 +46,22 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var callStop = rpc.declare({ object: 'luci.nora', method: 'stop', expect: { '': {} } });
 	var callRestart = rpc.declare({ object: 'luci.nora', method: 'restart', expect: { '': {} } });
 
-	function notify(msg, lv) { ui.addNotification(null, E('p', msg), lv || 'info'); }
 	function sc(kind) { return kind === 'ok' ? 'nora-status-ok' : kind === 'warn' ? 'nora-status-warn' : 'nora-status-stop'; }
+
+	function noraUiUrl(s) {
+		var host = s.host || window.location.hostname;
+		var port = s.port || '4873';
+
+		if (s.public_url)
+			return s.public_url;
+
+		if (host === '0.0.0.0' || host === '::')
+			host = window.location.hostname;
+		else if (host.indexOf(':') > -1 && host.charAt(0) !== '[')
+			host = '[' + host + ']';
+
+		return window.location.protocol + '//' + host + ':' + port;
+	}
 
 	function bindBtn(id, label, busy, handler) {
 		var btn = document.getElementById(id);
@@ -54,9 +70,9 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		btn.addEventListener('click', function() {
 			btn.disabled = true; btn.textContent = busy;
 			Promise.resolve(handler()).then(function(r) {
-				notify((r && (r.message || r.error || r.detected_version || r.version)) || label);
+				Nora.notify(ui, (r && (r.message || r.error || r.detected_version || r.version)) || label);
 				return render();
-			}).catch(function(e) { notify(String(e), 'danger'); })
+			}).catch(function(e) { Nora.notify(ui, String(e), 'danger'); })
 			.finally(function() { btn.disabled = false; btn.textContent = label; });
 		});
 	}
@@ -93,6 +109,10 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 			var elA = document.getElementById('nora-s-auth');
 			elA.textContent = authEnabled ? (s.htpasswd_present ? '{{ _("Enabled with htpasswd") }}' : '{{ _("Enabled, waiting for htpasswd") }}') : '{{ _("Disabled") }}';
 			elA.className = 'nora-value ' + sc(authEnabled ? (s.htpasswd_present ? 'ok' : 'warn') : 'warn');
+
+			var uiLink = document.getElementById('nora-link-ui');
+			uiLink.href = noraUiUrl(s);
+			uiLink.style.display = installed ? '' : 'none';
 
 			document.getElementById('nora-btn-install').style.display = installed ? 'none' : '';
 			document.getElementById('nora-btn-start').style.display = (installed && !running) ? '' : 'none';

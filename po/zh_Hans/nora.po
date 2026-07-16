@@ -124,6 +124,9 @@ msgstr "已启用，等待上传 htpasswd"
 msgid "Refresh status"
 msgstr "刷新状态"
 
+msgid "Open Nora UI"
+msgstr "打开 Nora UI"
+
 msgid "Refreshing..."
 msgstr "刷新中..."
 
@@ -238,8 +241,8 @@ msgstr "插件设置"
 msgid "Nora Configuration"
 msgstr "Nora 配置"
 
-msgid "Registries"
-msgstr "仓库"
+msgid "Npm Registry"
+msgstr "Npm 仓库"
 
 msgid "Version Update"
 msgstr "版本更新"
