@@ -13,6 +13,10 @@
 					<div class="nora-card"><h3>{{ _("Current version") }}</h3><div class="nora-value" id="nora-s-version">-<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-install-inline" style="display:none">{{ _("Install") }}</button></div></div>
 					<div class="nora-card"><h3>{{ _("Service enabled state") }}</h3><div class="nora-value" id="nora-s-enabled">-</div></div>
 					<div class="nora-card"><h3>{{ _("Authentication state") }}</h3><div class="nora-value" id="nora-s-auth">-</div></div>
+					<div class="nora-card" id="nora-ui-card" style="display:none">
+    					<h3>{{ _("Nora UI address") }}</h3>
+    					<div class="nora-value"><a id="nora-link-ui" class="nora-url" href="#" target="_blank" rel="noopener noreferrer">-</a></div>
+				    </div>
 				</div>
 				<div class="nora-card">
 					<h3>{{ _("Service actions") }}</h3>
@@ -23,11 +27,6 @@
 						<button class="btn cbi-button cbi-button-negative" type="button" id="nora-btn-stop" style="display:none">{{ _("Stop") }}</button>
 						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-restart" style="display:none">{{ _("Restart") }}</button>
 					</div>
-				</div>
-				<div class="nora-card" id="nora-ui-card" style="display:none">
-					<h3>{{ _("Nora UI address") }}</h3>
-					<div class="nora-value"><a id="nora-link-ui" class="nora-url" href="#" target="_blank" rel="noopener noreferrer">-</a></div>
-					<div class="nora-meta">{{ _("Generated from the current LuCI page hostname.") }}</div>
 				</div>
 			</div>
 		</div>
