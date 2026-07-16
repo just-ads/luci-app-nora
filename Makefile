@@ -3,6 +3,7 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=luci-app-nora
 PKG_VERSION:=1.0.4
 PKG_RELEASE:=1
+PKG_PO_VERSION:=$(PKG_VERSION)-r$(PKG_RELEASE)
 
 LUCI_TITLE:=LuCI support for Nora private npm registry
 LUCI_DESCRIPTION:=Manage Nora on OpenWrt with LuCI, rpcd and procd
