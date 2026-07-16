@@ -7,25 +7,28 @@
 	<div id="nora-v-spinner" class="spinning">{{ _('Loading Nora…') }}</div>
 	<div id="nora-v-skeleton" style="display:none">
 		<div class="nora-section-stack">
-			<div class="nora-grid">
-				<div class="nora-card"><h3>{{ _("Installed status") }}</h3><div class="nora-value" id="nora-v-status">-</div></div>
-				<div class="nora-card"><h3>{{ _("Current installed version") }}</h3><div class="nora-value" id="nora-v-current">-</div></div>
-				<div class="nora-card"><h3>{{ _("New version") }}</h3><div class="nora-value" id="nora-v-latest">-</div></div>
-				<div class="nora-card"><h3>{{ _("Resolved architecture") }}</h3><div class="nora-value" id="nora-v-arch">-</div></div>
-				<div class="nora-card"><h3>{{ _("Binary path") }}</h3><div class="nora-value" id="nora-v-binary">-</div></div>
-			</div>
 			<div class="nora-card">
-				<h3 id="nora-v-action-title">{{ _("Install Nora") }}</h3>
+				<h3 id="nora-v-action-title">{{ _("Nora core") }}</h3>
+				<div class="nora-grid">
+					<div><div class="nora-meta">{{ _("Installed status") }}</div><div class="nora-value" id="nora-v-status">-</div></div>
+					<div><div class="nora-meta">{{ _("Current installed version") }}</div><div class="nora-value" id="nora-v-current">-</div></div>
+					<div><div class="nora-meta">{{ _("New version") }}</div><div class="nora-value" id="nora-v-latest">-</div></div>
+				</div>
 				<div class="nora-actions">
 					<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-install" disabled>{{ _("Install") }}</button>
 					<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-upgrade" style="display:none">{{ _("Upgrade") }}</button>
-					<button class="btn cbi-button cbi-button-neutral" type="button" id="nora-btn-refresh" disabled>{{ _("Refresh status") }}</button>
+					<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-upload" disabled>{{ _("Upload Nora binary") }}</button>
 				</div>
 			</div>
 			<div class="nora-card">
-				<h3>{{ _("Manual binary upload") }}</h3>
+				<h3>{{ _("LuCI plugin") }}</h3>
+				<div class="nora-grid">
+					<div><div class="nora-meta">{{ _("Current plugin version") }}</div><div class="nora-value" id="nora-plugin-current">-</div></div>
+					<div><div class="nora-meta">{{ _("Latest plugin version") }}</div><div class="nora-value" id="nora-plugin-latest">-</div></div>
+					<div><div class="nora-meta">{{ _("Plugin package") }}</div><div class="nora-value" id="nora-plugin-package">-</div></div>
+				</div>
 				<div class="nora-actions">
-					<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-upload" disabled>{{ _("Upload Nora binary") }}</button>
+					<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-plugin-upgrade" disabled>{{ _("Upgrade") }}</button>
 				</div>
 			</div>
 		</div>
@@ -63,8 +66,11 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var rpc = mods[0], ui = mods[1];
 	var callStatus = rpc.declare({ object: 'luci.nora', method: 'status', expect: { '': {} } });
 	var callLatestVersion = rpc.declare({ object: 'luci.nora', method: 'latest_version', expect: { '': {} } });
+	var callPluginStatus = rpc.declare({ object: 'luci.nora', method: 'plugin_status', expect: { '': {} } });
+	var callPluginLatestVersion = rpc.declare({ object: 'luci.nora', method: 'plugin_latest_version', expect: { '': {} } });
 	var callInstall = rpc.declare({ object: 'luci.nora', method: 'install', params: [ 'version' ], expect: { '': {} } });
 	var callUpgrade = rpc.declare({ object: 'luci.nora', method: 'upgrade', expect: { '': {} } });
+	var callPluginUpgrade = rpc.declare({ object: 'luci.nora', method: 'plugin_upgrade', expect: { '': {} } });
 	var callUploadBinary = rpc.declare({ object: 'luci.nora', method: 'upload_binary', params: [ 'path' ], expect: { '': {} } });
 	var callSaveSettings = rpc.declare({ object: 'luci.nora', method: 'save_settings', params: [ 'section', 'settings' ], expect: { '': {} } });
 
@@ -80,13 +86,25 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 				Nora.notify(ui, (r && (r.message || r.error || r.detected_version || r.version)) || label);
 				return refreshSummary();
 			}).catch(function(e) { Nora.notify(ui, String(e), 'danger'); })
-			.finally(function() { btn.disabled = false; btn.textContent = label; });
+			.finally(function() { btn.textContent = label; });
 		});
+	}
+
+	function normalizedVersion(v) {
+		var m = String(v || '').toLowerCase().match(/([0-9]+(?:\.[0-9]+)+(?:[-+.][a-z0-9.-]+)?)/);
+		return m ? m[1] : '';
+	}
+
+	function hasUpgrade(current, latest) {
+		var c = normalizedVersion(current), l = normalizedVersion(latest);
+		return !!(c && l && c !== l);
 	}
 
 	bindBtn('nora-btn-install', '{{ _("Install") }}', '{{ _("Installing...") }}', function() { return callInstall('latest'); });
 	bindBtn('nora-btn-upgrade', '{{ _("Upgrade") }}', '{{ _("Upgrading...") }}', function() { return callUpgrade(); });
-	bindBtn('nora-btn-refresh', '{{ _("Refresh status") }}', '{{ _("Refreshing...") }}', function() { return callStatus(); });
+	document.getElementById('nora-btn-upgrade').disabled = true;
+	bindBtn('nora-btn-plugin-upgrade', '{{ _("Upgrade") }}', '{{ _("Upgrading...") }}', function() { return callPluginUpgrade(); });
+	document.getElementById('nora-btn-plugin-upgrade').disabled = true;
 	bindBtn('nora-btn-upload', '{{ _("Upload Nora binary") }}', '{{ _("Uploading...") }}', function(ev) {
 		var p = '/tmp/nora-upload-' + Date.now();
 		return ui.uploadFile(p, ev && ev.target, '{{ _("If this upload fails with Error: 0, the LuCI/uhttpd request size limit likely rejected the binary before Nora received it.") }}')
@@ -111,22 +129,37 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 
 	function refreshSummary() {
 		var latestEl = document.getElementById('nora-v-latest');
+		var pluginLatestEl = document.getElementById('nora-plugin-latest');
 		latestEl.textContent = '{{ _("Checking...") }}';
+		pluginLatestEl.textContent = '{{ _("Checking...") }}';
 
-		return L.resolveDefault(callStatus(), {}).then(function(s) {
+		return Promise.all([
+			L.resolveDefault(callStatus(), {}),
+			L.resolveDefault(callPluginStatus(), {})
+		]).then(function(results) {
+			var s = results[0] || {}, ps = results[1] || {};
 			var inst = !!s.installed;
 			document.getElementById('nora-v-status').textContent = inst ? '{{ _("Installed") }}' : '{{ _("Not installed") }}';
 			document.getElementById('nora-v-status').className = 'nora-value ' + sc(inst ? 'ok' : 'warn');
 			document.getElementById('nora-v-current').textContent = s.installed_version || (inst ? '{{ _("Detected but version string is unavailable") }}' : '{{ _("Not installed") }}');
-			document.getElementById('nora-v-arch').textContent = s.resolved_architecture || s.architecture || '{{ _("Unknown") }}';
-			document.getElementById('nora-v-binary').textContent = s.binary || '{{ _("Unavailable") }}';
-			document.getElementById('nora-v-action-title').textContent = inst ? '{{ _("Upgrade Nora") }}' : '{{ _("Install Nora") }}';
 			document.getElementById('nora-btn-install').style.display = inst ? 'none' : '';
+			document.getElementById('nora-btn-install').disabled = inst;
 			document.getElementById('nora-btn-upgrade').style.display = inst ? '' : 'none';
+			document.getElementById('nora-btn-upgrade').disabled = true;
+			document.getElementById('nora-btn-upload').disabled = false;
 			var archEl = document.querySelector('#nora-v-form [name="cbid.nora.config.architecture"]');
 			if (archEl) archEl.value = s.architecture || 'auto';
+			document.getElementById('nora-plugin-current').textContent = ps.current_version || '{{ _("Unavailable") }}';
+			document.getElementById('nora-plugin-package').textContent = ps.package || 'luci-app-nora';
 			L.resolveDefault(callLatestVersion(), {}).then(function(latest) {
-				latestEl.textContent = (latest && latest.latest_version) || '{{ _("Unavailable") }}';
+				var lv = latest && latest.latest_version;
+				latestEl.textContent = lv || '{{ _("Unavailable") }}';
+				document.getElementById('nora-btn-upgrade').disabled = !(inst && hasUpgrade(s.installed_version, lv));
+			});
+			L.resolveDefault(callPluginLatestVersion(), {}).then(function(latest) {
+				var pv = latest && (latest.package_version || latest.latest_version);
+				pluginLatestEl.textContent = pv || '{{ _("Unavailable") }}';
+				document.getElementById('nora-btn-plugin-upgrade').disabled = !(latest && latest.ipk_url && latest.sha256_url && latest.upgrade_available);
 			});
 		});
 	}

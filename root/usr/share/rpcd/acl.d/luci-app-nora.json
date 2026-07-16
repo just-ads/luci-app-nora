@@ -4,7 +4,7 @@
 		"read": {
 			"uci": [ "nora" ],
 			"ubus": {
-				"luci.nora": [ "status", "latest_version", "read_uci_config", "read_nora_config", "logs" ]
+				"luci.nora": [ "status", "latest_version", "plugin_status", "plugin_latest_version", "read_uci_config", "read_nora_config", "logs" ]
 			}
 		},
 		"write": {
@@ -14,7 +14,7 @@
 			},
 			"uci": [ "nora" ],
 			"ubus": {
-				"luci.nora": [ "install", "upgrade", "upload_binary", "render_nora_config", "save_settings", "start", "stop", "restart", "set_htpasswd", "firewall_apply" ]
+				"luci.nora": [ "install", "upgrade", "plugin_upgrade", "upload_binary", "render_nora_config", "save_settings", "start", "stop", "restart", "set_htpasswd", "firewall_apply" ]
 			}
 		}
 	}

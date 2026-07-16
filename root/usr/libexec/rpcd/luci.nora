@@ -9,11 +9,14 @@ list_methods() {
 {
 	"status": {},
 	"latest_version": {},
+	"plugin_status": {},
+	"plugin_latest_version": {},
 	"read_uci_config": {},
 	"install": {
 		"version": "String"
 	},
 	"upgrade": {},
+	"plugin_upgrade": {},
 	"upload_binary": {
 		"path": "String"
 	},
@@ -64,6 +67,12 @@ handle_call() {
 		latest_version)
 			call_control latest-version
 			;;
+		plugin_status)
+			call_control plugin-status
+			;;
+		plugin_latest_version)
+			call_control plugin-latest-version
+			;;
 		read_uci_config)
 			call_control read-uci-config
 			;;
@@ -74,6 +83,9 @@ handle_call() {
 			;;
 		upgrade)
 			call_control upgrade
+			;;
+		plugin_upgrade)
+			call_control plugin-upgrade
 			;;
 		upload_binary)
 			local path

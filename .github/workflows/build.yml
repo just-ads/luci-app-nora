@@ -96,6 +96,10 @@ jobs:
         run: |
           mkdir -p artifacts
           find openwrt-sdk/bin/packages -type f -name "*.ipk" -exec cp -v {} artifacts/ \;
+          (cd artifacts && sha256sum *.ipk > SHA256SUMS)
+          while IFS= read -r ipk; do
+            sha256sum "$ipk" > "$ipk.sha256"
+          done < <(find artifacts -maxdepth 1 -type f -name "*.ipk" -print)
 
       - name: Upload artifacts (CI)
         if: github.event_name == 'workflow_dispatch'

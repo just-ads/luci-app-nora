@@ -19,7 +19,6 @@
 				<div class="nora-card">
 					<h3>{{ _("Service actions") }}</h3>
 					<div class="nora-actions">
-						<button class="btn cbi-button cbi-button-neutral" type="button" id="nora-btn-refresh" disabled>{{ _("Refresh status") }}</button>
 						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-install" style="display:none">{{ _("Install") }}</button>
 						<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-start" style="display:none">{{ _("Start") }}</button>
 						<button class="btn cbi-button cbi-button-negative" type="button" id="nora-btn-stop" style="display:none">{{ _("Stop") }}</button>
@@ -73,7 +72,6 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		});
 	}
 
-	bindBtn('nora-btn-refresh', '{{ _("Refresh status") }}', '{{ _("Refreshing...") }}', callStatus);
 	bindBtn('nora-btn-install', '{{ _("Install") }}', '{{ _("Installing...") }}', function() { return callInstall('latest'); });
 	bindBtn('nora-btn-install-inline', '{{ _("Install") }}', '{{ _("Installing...") }}', function() { return callInstall('latest'); });
 	bindBtn('nora-btn-start', '{{ _("Start") }}', '{{ _("Starting...") }}', callStart);
