@@ -437,7 +437,7 @@ config_load_raw_values() {
 	config_get CFG_INSTALL_DIR "$UCI_SECTION" install_dir '/opt/nora'
 	config_get CFG_VERSION "$UCI_SECTION" version 'latest'
 	config_get CFG_ARCHITECTURE "$UCI_SECTION" architecture 'auto'
-	config_get CFG_HOST "$UCI_SECTION" host "$(default_host)"
+	CFG_HOST="$(default_host)"
 	config_get CFG_PORT "$UCI_SECTION" port '4873'
 	CFG_PUBLIC_URL=""
 	config_get CFG_STORAGE_PATH "$UCI_SECTION" storage_path "$CFG_INSTALL_DIR/data/storage"
