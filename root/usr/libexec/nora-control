@@ -7,6 +7,7 @@ UCI_CONFIG="nora"
 UCI_SECTION="config"
 SERVICE_SCRIPT="/etc/init.d/nora"
 PLUGIN_PACKAGE="luci-app-nora"
+PLUGIN_I18N_PACKAGE="luci-i18n-nora-zh-cn"
 PLUGIN_REPO="just-ads/luci-app-nora"
 DEFAULT_LOG_MAX_SIZE="1048576"
 DEFAULT_LOG_READ_LIMIT="262144"
@@ -298,6 +299,14 @@ plugin_release_sha256_url_from_json() {
 	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-app-nora_[^"]*_all\.ipk\.sha256\)".*/\1/p' | sed -n '1p'
 }
 
+plugin_release_i18n_ipk_url_from_json() {
+	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-i18n-nora-zh-cn_[^"]*_all\.ipk\)".*/\1/p' | sed -n '1p'
+}
+
+plugin_release_i18n_sha256_url_from_json() {
+	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-i18n-nora-zh-cn_[^"]*_all\.ipk\.sha256\)".*/\1/p' | sed -n '1p'
+}
+
 plugin_asset_name_from_url() {
 	local url="$1"
 	printf '%s' "${url##*/}"
@@ -311,22 +320,34 @@ plugin_version_from_ipk_name() {
 	printf '%s' "$version"
 }
 
+plugin_i18n_version_from_ipk_name() {
+	local name="$1" version
+	version="${name#luci-i18n-nora-zh-cn_}"
+	version="${version%_all.ipk}"
+	[ "$version" != "$name" ] || return 1
+	printf '%s' "$version"
+}
+
 validate_plugin_asset_url() {
 	local url="$1"
 	case "$url" in
-		https://github.com/$PLUGIN_REPO/releases/download/*/luci-app-nora_*_all.ipk|https://github.com/$PLUGIN_REPO/releases/download/*/luci-app-nora_*_all.ipk.sha256) return 0 ;;
+		https://github.com/$PLUGIN_REPO/releases/download/*/luci-app-nora_*_all.ipk|https://github.com/$PLUGIN_REPO/releases/download/*/luci-app-nora_*_all.ipk.sha256|https://github.com/$PLUGIN_REPO/releases/download/*/luci-i18n-nora-zh-cn_*_all.ipk|https://github.com/$PLUGIN_REPO/releases/download/*/luci-i18n-nora-zh-cn_*_all.ipk.sha256) return 0 ;;
 		*) return 1 ;;
 	esac
 }
 
 collect_plugin_latest_version() {
-	local release_json latest_version package_version ipk_url sha256_url ipk_name current_version upgrade_available
+	local release_json latest_version package_version i18n_package_version ipk_url sha256_url i18n_ipk_url i18n_sha256_url ipk_name i18n_ipk_name current_version upgrade_available
 	release_json="$(detect_plugin_latest_release || true)"
 	latest_version="$(printf '%s\n' "$release_json" | plugin_release_tag_from_json)"
 	ipk_url="$(printf '%s\n' "$release_json" | plugin_release_ipk_url_from_json)"
 	sha256_url="$(printf '%s\n' "$release_json" | plugin_release_sha256_url_from_json)"
+	i18n_ipk_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_ipk_url_from_json)"
+	i18n_sha256_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_sha256_url_from_json)"
 	ipk_name="$(plugin_asset_name_from_url "$ipk_url")"
+	i18n_ipk_name="$(plugin_asset_name_from_url "$i18n_ipk_url")"
 	package_version="$(plugin_version_from_ipk_name "$ipk_name" 2>/dev/null || true)"
+	i18n_package_version="$(plugin_i18n_version_from_ipk_name "$i18n_ipk_name" 2>/dev/null || true)"
 	current_version="$(plugin_current_version || true)"
 	upgrade_available=0
 	[ -n "$package_version" ] && [ -n "$current_version" ] && [ "$package_version" != "$current_version" ] && upgrade_available=1
@@ -335,13 +356,18 @@ collect_plugin_latest_version() {
 	json_add_boolean success 1
 	json_add_string action plugin-latest-version
 	json_add_string package "$PLUGIN_PACKAGE"
+	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
 	json_add_string repository "$PLUGIN_REPO"
 	json_add_string current_version "$current_version"
 	json_add_string latest_version "$latest_version"
 	json_add_string package_version "$package_version"
+	json_add_string i18n_package_version "$i18n_package_version"
 	json_add_string ipk_name "$ipk_name"
+	json_add_string i18n_ipk_name "$i18n_ipk_name"
 	json_add_string ipk_url "$ipk_url"
 	json_add_string sha256_url "$sha256_url"
+	json_add_string i18n_ipk_url "$i18n_ipk_url"
+	json_add_string i18n_sha256_url "$i18n_sha256_url"
 	json_add_boolean upgrade_available "$upgrade_available"
 	json_dump
 }
@@ -358,6 +384,7 @@ collect_plugin_status() {
 	json_add_boolean success 1
 	json_add_string action plugin-status
 	json_add_string package "$PLUGIN_PACKAGE"
+	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
 	json_add_string repository "$PLUGIN_REPO"
 	json_add_string current_version "$current_version"
 	json_add_boolean installed "$( [ -n "$current_version" ] && printf 1 || printf 0 )"
@@ -1068,7 +1095,7 @@ upload_binary() {
 }
 
 plugin_upgrade() {
-	local release_json latest_version package_version ipk_url sha256_url ipk_name sha256_name tmp_ipk tmp_sha expected actual install_output
+	local release_json latest_version package_version i18n_package_version ipk_url sha256_url i18n_ipk_url i18n_sha256_url ipk_name sha256_name i18n_ipk_name i18n_sha256_name tmp_ipk tmp_sha tmp_i18n_ipk tmp_i18n_sha expected actual expected_i18n actual_i18n install_output
 
 	require_command wget
 	require_command opkg
@@ -1079,38 +1106,84 @@ plugin_upgrade() {
 	latest_version="$(printf '%s\n' "$release_json" | plugin_release_tag_from_json)"
 	ipk_url="$(printf '%s\n' "$release_json" | plugin_release_ipk_url_from_json)"
 	sha256_url="$(printf '%s\n' "$release_json" | plugin_release_sha256_url_from_json)"
+	i18n_ipk_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_ipk_url_from_json)"
+	i18n_sha256_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_sha256_url_from_json)"
 	[ -n "$latest_version" ] || fail "plugin latest release not found"
 	[ -n "$ipk_url" ] || fail "plugin ipk asset not found in latest release"
 	[ -n "$sha256_url" ] || fail "plugin sha256 asset not found in latest release"
 	validate_plugin_asset_url "$ipk_url" || fail "invalid plugin ipk download url"
 	validate_plugin_asset_url "$sha256_url" || fail "invalid plugin sha256 download url"
+	if [ -n "$i18n_ipk_url" ] && [ -n "$i18n_sha256_url" ]; then
+		validate_plugin_asset_url "$i18n_ipk_url" || fail "invalid plugin i18n ipk download url"
+		validate_plugin_asset_url "$i18n_sha256_url" || fail "invalid plugin i18n sha256 download url"
+	elif [ -n "$i18n_ipk_url" ] || [ -n "$i18n_sha256_url" ]; then
+		plugin_log WARN plugin-upgrade "plugin i18n assets incomplete; skipping i18n package"
+		i18n_ipk_url=""
+		i18n_sha256_url=""
+	fi
 
 	ipk_name="$(plugin_asset_name_from_url "$ipk_url")"
 	package_version="$(plugin_version_from_ipk_name "$ipk_name" 2>/dev/null || true)"
 	sha256_name="$(plugin_asset_name_from_url "$sha256_url")"
 	tmp_ipk="/tmp/$ipk_name"
 	tmp_sha="/tmp/$sha256_name"
-	rm -f "$tmp_ipk" "$tmp_sha"
+	if [ -n "$i18n_ipk_url" ] && [ -n "$i18n_sha256_url" ]; then
+		i18n_ipk_name="$(plugin_asset_name_from_url "$i18n_ipk_url")"
+		i18n_package_version="$(plugin_i18n_version_from_ipk_name "$i18n_ipk_name" 2>/dev/null || true)"
+		i18n_sha256_name="$(plugin_asset_name_from_url "$i18n_sha256_url")"
+		tmp_i18n_ipk="/tmp/$i18n_ipk_name"
+		tmp_i18n_sha="/tmp/$i18n_sha256_name"
+	else
+		i18n_ipk_name=""
+		i18n_package_version=""
+		i18n_sha256_name=""
+		tmp_i18n_ipk=""
+		tmp_i18n_sha=""
+	fi
+	rm -f "$tmp_ipk" "$tmp_sha" "$tmp_i18n_ipk" "$tmp_i18n_sha"
 	plugin_log INFO plugin-upgrade "downloading plugin version=$latest_version ipk=$ipk_name"
 	wget -q -O "$tmp_ipk" "$ipk_url" || fail "plugin ipk download failed"
 	[ -s "$tmp_ipk" ] || fail "downloaded plugin ipk is empty"
 	wget -q -O "$tmp_sha" "$sha256_url" || fail "plugin sha256 download failed"
 	[ -s "$tmp_sha" ] || fail "downloaded plugin sha256 is empty"
+	if [ -n "$tmp_i18n_ipk" ]; then
+		plugin_log INFO plugin-upgrade "downloading plugin i18n version=$latest_version ipk=$i18n_ipk_name"
+		wget -q -O "$tmp_i18n_ipk" "$i18n_ipk_url" || fail "plugin i18n ipk download failed"
+		[ -s "$tmp_i18n_ipk" ] || fail "downloaded plugin i18n ipk is empty"
+		wget -q -O "$tmp_i18n_sha" "$i18n_sha256_url" || fail "plugin i18n sha256 download failed"
+		[ -s "$tmp_i18n_sha" ] || fail "downloaded plugin i18n sha256 is empty"
+	fi
 	expected="$(sed -n 's/^\([A-Fa-f0-9]\{64\}\).*/\1/p' "$tmp_sha" | sed -n '1p')"
 	[ -n "$expected" ] || fail "invalid plugin sha256 file"
 	actual="$(sha256sum "$tmp_ipk" 2>/dev/null | awk '{print $1}')"
 	[ -n "$actual" ] || fail "failed to calculate plugin ipk sha256"
 	[ "$expected" = "$actual" ] || fail "plugin ipk sha256 mismatch"
+	if [ -n "$tmp_i18n_ipk" ]; then
+		expected_i18n="$(sed -n 's/^\([A-Fa-f0-9]\{64\}\).*/\1/p' "$tmp_i18n_sha" | sed -n '1p')"
+		[ -n "$expected_i18n" ] || fail "invalid plugin i18n sha256 file"
+		actual_i18n="$(sha256sum "$tmp_i18n_ipk" 2>/dev/null | awk '{print $1}')"
+		[ -n "$actual_i18n" ] || fail "failed to calculate plugin i18n ipk sha256"
+		[ "$expected_i18n" = "$actual_i18n" ] || fail "plugin i18n ipk sha256 mismatch"
+	else
+		actual_i18n=""
+	fi
 
 	rm -f "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
 	: > "$DEFER_RPCD_RELOAD_MARKER"
-	install_output="$(opkg install "$tmp_ipk" 2>&1)" || {
-		rm -f "$DEFER_RPCD_RELOAD_MARKER" "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
-		fail "plugin install failed: $install_output"
-	}
+	if [ -n "$tmp_i18n_ipk" ]; then
+		install_output="$(opkg install "$tmp_ipk" "$tmp_i18n_ipk" 2>&1)" || {
+			rm -f "$DEFER_RPCD_RELOAD_MARKER" "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+			fail "plugin install failed: $install_output"
+		}
+	else
+		install_output="$(opkg install "$tmp_ipk" 2>&1)" || {
+			rm -f "$DEFER_RPCD_RELOAD_MARKER" "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+			fail "plugin install failed: $install_output"
+		}
+	fi
 	rm -f "$DEFER_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
-	rm -f "$tmp_ipk" "$tmp_sha" >/dev/null 2>&1 || true
-	plugin_log INFO plugin-upgrade "plugin upgraded version=$latest_version package_version=$package_version sha256=$actual"
+	rm -f "$tmp_ipk" "$tmp_sha" "$tmp_i18n_ipk" "$tmp_i18n_sha" >/dev/null 2>&1 || true
+	plugin_log INFO plugin-upgrade "plugin upgraded version=$latest_version package_version=$package_version i18n_package_version=$i18n_package_version sha256=$actual i18n_sha256=$actual_i18n"
 	if [ -f "$NEEDS_RPCD_RELOAD_MARKER" ]; then
 		(
 			sleep 2
@@ -1125,10 +1198,14 @@ plugin_upgrade() {
 	json_add_string action plugin-upgrade
 	json_add_string message "plugin upgraded; refresh this page"
 	json_add_string package "$PLUGIN_PACKAGE"
+	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
 	json_add_string version "$latest_version"
 	json_add_string package_version "$package_version"
+	json_add_string i18n_package_version "$i18n_package_version"
 	json_add_string ipk_name "$ipk_name"
+	json_add_string i18n_ipk_name "$i18n_ipk_name"
 	json_add_string sha256 "$actual"
+	json_add_string i18n_sha256 "$actual_i18n"
 	json_dump
 }
 
