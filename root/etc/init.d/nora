@@ -9,12 +9,9 @@ STOP=10
 SERVICE_NAME="nora"
 
 start_service() {
-	local enabled install_dir
+	local install_dir
 
 	config_load nora
-	config_get_bool enabled config enabled 0
-	[ "$enabled" -eq 1 ] || return 0
-
 	config_get install_dir config install_dir '/opt/nora'
 	if [ ! -x "$install_dir/bin/nora" ]; then
 		logger -t nora "Nora binary is not installed: $install_dir/bin/nora"
@@ -27,6 +24,15 @@ start_service() {
 	procd_set_param command /usr/libexec/nora-run
 	procd_set_param respawn 3600 5 5
 	procd_close_instance
+}
+
+stop_service() {
+	uci -q delete firewall.nora >/dev/null 2>&1 || true
+	uci commit firewall >/dev/null 2>&1 || true
+
+	if [ -x /etc/init.d/firewall ]; then
+		/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true
+	fi
 }
 
 reload_service() {

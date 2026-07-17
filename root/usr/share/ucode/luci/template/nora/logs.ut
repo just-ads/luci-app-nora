@@ -19,7 +19,10 @@
 				<select id="nora-log-limit" class="cbi-input-select">
 					<option value="65536">64 KiB</option>
 					<option value="131072">128 KiB</option>
-					<option value="262144">256 KiB</option>
+					<option value="262144" selected>256 KiB</option>
+					<option value="524288">512 KiB</option>
+					<option value="1048576">1 MiB</option>
+					<option value="2097152">2 MiB</option>
 				</select>
 			</label>
 			<span class="nora-meta" id="nora-log-meta">-</span>
@@ -52,6 +55,24 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		return 'nora-log-level-' + String(level || 'raw').toLowerCase();
 	}
 
+	function formatTimestamp(ts) {
+		var d;
+		if (!ts || ts === '-')
+			return '-';
+		d = new Date(ts);
+		if (isNaN(d.getTime()))
+			return ts;
+		return d.toLocaleString(undefined, {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+			hour12: false
+		});
+	}
+
 	function formatEntry(line) {
 		var entry, fields, message, level, ts, target;
 		try {
@@ -59,7 +80,7 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 			fields = entry.fields || {};
 			message = fields.message || line;
 			level = entry.level || 'INFO';
-			ts = entry.timestamp || '-';
+			ts = formatTimestamp(entry.timestamp);
 			target = entry.target || '-';
 			return { text: ts + ' | ' + level + ' | ' + target + ' | ' + message, level: level };
 		} catch (e) {

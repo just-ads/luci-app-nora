@@ -10,16 +10,6 @@
 		<h3>{{ _("Global service settings") }}</h3>
 
 		<div class="cbi-value">
-			<label class="cbi-value-title" for="cfg-enabled">{{ _("Enable service") }}</label>
-			<div class="cbi-value-field">
-				<div class="cbi-checkbox">
-					<input id="cfg-enabled" type="checkbox" name="cbid.nora.config.enabled">
-					<label for="cfg-enabled"></label>
-				</div>
-			</div>
-		</div>
-
-		<div class="cbi-value">
 			<label class="cbi-value-title" for="cfg-install_dir">{{ _("Install directory") }}</label>
 			<div class="cbi-value-field">
 				<div>
@@ -29,19 +19,20 @@
 		</div>
 
 		<div class="cbi-value">
-			<label class="cbi-value-title" for="cfg-port">{{ _("Port") }}</label>
+			<label class="cbi-value-title" for="cfg-boot_enabled">{{ _("Start on boot") }}</label>
 			<div class="cbi-value-field">
-				<input id="cfg-port" type="text" class="cbi-input-text" name="cbid.nora.config.port">
+				<div class="cbi-checkbox">
+					<input id="cfg-boot_enabled" type="checkbox" name="cbid.nora.config.boot_enabled">
+					<label for="cfg-boot_enabled"></label>
+				</div>
+				<div class="cbi-value-description">{{ _("Enable or disable Nora in the OpenWrt init.d startup list.") }}</div>
 			</div>
 		</div>
 
 		<div class="cbi-value">
-			<label class="cbi-value-title" for="cfg-public_url">{{ _("Public URL") }}</label>
+			<label class="cbi-value-title" for="cfg-port">{{ _("Port") }}</label>
 			<div class="cbi-value-field">
-				<div>
-					<input id="cfg-public_url" type="text" class="cbi-input-text" name="cbid.nora.config.public_url" placeholder="https://registry.example.com">
-				</div>
-				<div class="cbi-value-description">{{ _("Leave empty to omit Nora public_url; the service listens on the router LAN IP by default.") }}</div>
+				<input id="cfg-port" type="text" class="cbi-input-text" name="cbid.nora.config.port">
 			</div>
 		</div>
 
@@ -140,7 +131,7 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var callSaveSettings = rpc.declare({ object: 'luci.nora', method: 'save_settings', params: [ 'section', 'settings' ], expect: { '': {} } });
 	var callReadUciConfig = rpc.declare({ object: 'luci.nora', method: 'read_uci_config', expect: { '': {} } });
 
-	var GLOBAL_KEYS = ['enabled','install_dir','port','public_url','allow_wan_access','nora_log_max_size','plugin_log_max_size'];
+	var GLOBAL_KEYS = ['install_dir','boot_enabled','port','allow_wan_access','nora_log_max_size','plugin_log_max_size'];
 	var AUTH_KEYS = ['auth_enabled','anonymous_read','htpasswd_file','token_storage'];
 
 	function bindSaveBtn(btnId, section, formId, keys) {

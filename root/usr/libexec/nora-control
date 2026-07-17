@@ -8,6 +8,9 @@ UCI_SECTION="config"
 SERVICE_SCRIPT="/etc/init.d/nora"
 PLUGIN_PACKAGE="luci-app-nora"
 PLUGIN_REPO="just-ads/luci-app-nora"
+DEFAULT_LOG_MAX_SIZE="1048576"
+DEFAULT_LOG_READ_LIMIT="262144"
+MAX_LOG_READ_LIMIT="2097152"
 
 json_escape() {
 	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{ if (NR > 1) printf "\\n"; printf "%s", $0 }'
@@ -27,7 +30,7 @@ plugin_log_path() {
 plugin_log_max_size() {
 	local max_size
 	max_size="$(uci -q get "$UCI_CONFIG.$UCI_SECTION.plugin_log_max_size" 2>/dev/null)"
-	validate_log_size "$max_size" 2>/dev/null || max_size='262144'
+	validate_log_size "$max_size" 2>/dev/null || max_size="$DEFAULT_LOG_MAX_SIZE"
 	printf '%s' "$max_size"
 }
 
@@ -95,6 +98,10 @@ set_uci_option() {
 	uci set "$UCI_CONFIG.$UCI_SECTION.$1=$2" >/dev/null 2>&1 || fail "failed to save $1"
 }
 
+delete_uci_option() {
+	uci -q delete "$UCI_CONFIG.$UCI_SECTION.$1" >/dev/null 2>&1 || true
+}
+
 commit_uci_config() {
 	uci commit "$UCI_CONFIG" >/dev/null 2>&1 || fail "failed to commit UCI config"
 }
@@ -129,9 +136,9 @@ validate_log_size() {
 normalize_limit_bytes() {
 	local limit="$1"
 	if ! is_uint "$limit" || [ "$limit" -le 0 ]; then
-		limit=65536
+		limit="$DEFAULT_LOG_READ_LIMIT"
 	fi
-	[ "$limit" -le 262144 ] || limit=262144
+	[ "$limit" -le "$MAX_LOG_READ_LIMIT" ] || limit="$MAX_LOG_READ_LIMIT"
 	printf '%s' "$limit"
 }
 
@@ -197,10 +204,6 @@ validate_url_or_empty() {
 	printf '%s' "$url" | grep -Eq '^[^[:space:]<>"]+$'
 }
 
-trim_value() {
-	printf '%s' "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
-}
-
 detect_openwrt_ip() {
 	local ip candidate
 
@@ -230,39 +233,28 @@ detect_openwrt_ip() {
 default_public_url() {
 	local ip
 
-	ip="$(default_host)"
+	ip="$(default_lan_ip)"
 	printf 'http://%s:%s' "$ip" "$CFG_PORT"
 }
 
-default_host() {
+default_lan_ip() {
 	detect_openwrt_ip || printf '%s' '192.168.1.1'
 }
 
-normalize_host() {
-	local detected
+default_host() {
+	printf '%s' '0.0.0.0'
+}
 
+normalize_host() {
 	case "$CFG_HOST" in
-		''|0.0.0.0)
+		''|192.168.1.1)
 			CFG_HOST="$(default_host)"
-			;;
-		192.168.1.1)
-			detected="$(detect_openwrt_ip || true)"
-			[ -n "$detected" ] && CFG_HOST="$detected"
 			;;
 	esac
 }
 
 normalize_public_url() {
-	CFG_PUBLIC_URL="$(trim_value "$CFG_PUBLIC_URL")"
-
-	case "$CFG_PUBLIC_URL" in
-		0.0.0.0|0.0.0.0:*|http://0.0.0.0|http://0.0.0.0:*|https://0.0.0.0|https://0.0.0.0:*)
-			CFG_PUBLIC_URL="$(default_public_url)"
-			return 0
-			;;
-		''|http://*|https://*) ;;
-		*) CFG_PUBLIC_URL="http://$CFG_PUBLIC_URL" ;;
-	esac
+	CFG_PUBLIC_URL="$(default_public_url)"
 }
 
 detect_latest_version() {
@@ -433,16 +425,21 @@ normalize_version() {
 	esac
 }
 
+detect_binary_version() {
+	local binary="$1"
+	[ -x "$binary" ] || return 1
+	"$binary" --version 2>/dev/null || "$binary" version 2>/dev/null
+}
+
 config_load_raw_values() {
 	config_load "$UCI_CONFIG" || fail "unable to load UCI config nora"
 
-	config_get_bool CFG_ENABLED "$UCI_SECTION" enabled 0
 	config_get CFG_INSTALL_DIR "$UCI_SECTION" install_dir '/opt/nora'
 	config_get CFG_VERSION "$UCI_SECTION" version 'latest'
 	config_get CFG_ARCHITECTURE "$UCI_SECTION" architecture 'auto'
 	config_get CFG_HOST "$UCI_SECTION" host "$(default_host)"
 	config_get CFG_PORT "$UCI_SECTION" port '4873'
-	config_get CFG_PUBLIC_URL "$UCI_SECTION" public_url ''
+	CFG_PUBLIC_URL=""
 	config_get CFG_STORAGE_PATH "$UCI_SECTION" storage_path "$CFG_INSTALL_DIR/data/storage"
 	config_get_bool CFG_AUTH_ENABLED "$UCI_SECTION" auth_enabled 1
 	config_get_bool CFG_ANONYMOUS_READ "$UCI_SECTION" anonymous_read 0
@@ -453,8 +450,8 @@ config_load_raw_values() {
 	config_get CFG_NPM_PROXY_TIMEOUT "$UCI_SECTION" npm_proxy_timeout '30'
 	config_get CFG_NPM_METADATA_TTL "$UCI_SECTION" npm_metadata_ttl '300'
 	config_get_bool CFG_ALLOW_WAN_ACCESS "$UCI_SECTION" allow_wan_access 0
-	config_get CFG_NORA_LOG_MAX_SIZE "$UCI_SECTION" nora_log_max_size '1048576'
-	config_get CFG_PLUGIN_LOG_MAX_SIZE "$UCI_SECTION" plugin_log_max_size '262144'
+	config_get CFG_NORA_LOG_MAX_SIZE "$UCI_SECTION" nora_log_max_size "$DEFAULT_LOG_MAX_SIZE"
+	config_get CFG_PLUGIN_LOG_MAX_SIZE "$UCI_SECTION" plugin_log_max_size "$DEFAULT_LOG_MAX_SIZE"
 	normalize_host
 }
 
@@ -471,7 +468,6 @@ config_load_path_values() {
 
 config_load_htpasswd_values() {
 	config_load_raw_values
-	is_bool "$CFG_ENABLED" || fail "invalid enabled"
 	validate_abs_path "$CFG_INSTALL_DIR" || fail "invalid install_dir"
 	validate_abs_path "$CFG_HTPASSWD_FILE" || fail "invalid htpasswd_file"
 }
@@ -500,7 +496,6 @@ config_load_download_values() {
 }
 
 validate_config_values() {
-	is_bool "$CFG_ENABLED" || fail "invalid enabled"
 	validate_abs_path "$CFG_INSTALL_DIR" || fail "invalid install_dir"
 	validate_version "$CFG_VERSION" || fail "invalid version"
 	validate_architecture "$CFG_ARCHITECTURE" || fail "invalid architecture"
@@ -549,8 +544,8 @@ read_logs() {
 	local type="$1" offset="$2" limit_bytes="$3" log_file max_size size start count truncated initial prev_byte
 	local tmp raw trimmed final raw_bytes trimmed_bytes content_bytes next_offset content last_byte
 	config_load_raw_values
-	validate_log_size "$CFG_NORA_LOG_MAX_SIZE" || CFG_NORA_LOG_MAX_SIZE='1048576'
-	validate_log_size "$CFG_PLUGIN_LOG_MAX_SIZE" || CFG_PLUGIN_LOG_MAX_SIZE='262144'
+	validate_log_size "$CFG_NORA_LOG_MAX_SIZE" || CFG_NORA_LOG_MAX_SIZE="$DEFAULT_LOG_MAX_SIZE"
+	validate_log_size "$CFG_PLUGIN_LOG_MAX_SIZE" || CFG_PLUGIN_LOG_MAX_SIZE="$DEFAULT_LOG_MAX_SIZE"
 
 	case "$type" in nora|plugin) ;; *) fail "invalid log type" ;; esac
 	limit_bytes="$(normalize_limit_bytes "$limit_bytes")"
@@ -678,11 +673,7 @@ render_nora_config() {
 		validate_htpasswd_line "$(cat "$CFG_HTPASSWD_FILE" 2>/dev/null)" || fail "invalid htpasswd file"
 	fi
 
-	if [ -n "$CFG_PUBLIC_URL" ]; then
-		public_line="public_url = \"$(toml_escape "$CFG_PUBLIC_URL")\""
-	else
-		public_line="# public_url = \"https://registry.example.com\""
-	fi
+	public_line="public_url = \"$(toml_escape "$CFG_PUBLIC_URL")\""
 
 	if [ -n "$CFG_NPM_PROXY" ]; then
 		npm_proxy_line="proxy = \"$(toml_escape "$CFG_NPM_PROXY")\""
@@ -814,59 +805,95 @@ read_nora_config() {
 	json_dump
 }
 
+finish_save_settings() {
+	local section="$1" apply_firewall="$2" restart_nora="$3" was_running=0
+
+	SAVE_SETTINGS_MESSAGE="settings saved"
+	if [ "$restart_nora" -eq 1 ] && detect_running "$CFG_INSTALL_DIR/bin/nora"; then
+		was_running=1
+	fi
+
+	commit_uci_config
+	plugin_log INFO save-settings "$section settings committed"
+	render_nora_config >/dev/null 2>&1 || fail "settings saved but failed to render Nora config"
+	plugin_log INFO save-settings "Nora config regenerated after saving $section settings"
+
+	if [ "$was_running" -eq 1 ]; then
+		[ -x "$SERVICE_SCRIPT" ] || fail "settings saved but service script missing"
+		"$SERVICE_SCRIPT" restart >/dev/null 2>&1 || fail "settings saved but failed to restart Nora"
+		plugin_log INFO save-settings "Nora restarted after saving $section settings"
+		SAVE_SETTINGS_MESSAGE="settings saved and Nora restarted"
+	fi
+
+	if [ "$apply_firewall" -ne 0 ]; then
+		plugin_log INFO save-settings "applying firewall after saving $section settings"
+		firewall_apply >/dev/null 2>&1 || fail "settings saved but failed to apply firewall"
+	fi
+}
+
 save_settings() {
 	local section="$1"
-	local settings_json changed=0 apply_firewall=0
+	local settings_json changed=0 apply_firewall=0 restart_nora=0
 
+	SAVE_SETTINGS_MESSAGE="settings saved"
 	settings_json="$(cat)" || fail "failed to read settings"
 	config_load_raw_values
+	plugin_log INFO save-settings "saving $section settings"
 
 	json_init
 	json_load "$settings_json" 2>/dev/null || json_load '{}' 2>/dev/null
 
 	case "$section" in
 		global)
-			local enabled install_dir host port public_url allow_wan_access nora_log_max_size plugin_log_max_size
-			json_get_var enabled enabled
+			local install_dir boot_enabled host port allow_wan_access nora_log_max_size plugin_log_max_size
 			json_get_var install_dir install_dir
+			json_get_var boot_enabled boot_enabled
 			json_get_var port port
-			json_get_var public_url public_url
 			json_get_var allow_wan_access allow_wan_access
 			json_get_var nora_log_max_size nora_log_max_size
 			json_get_var plugin_log_max_size plugin_log_max_size
 
-			[ -n "$enabled" ] || enabled="$CFG_ENABLED"
 			[ -n "$install_dir" ] || install_dir="$CFG_INSTALL_DIR"
+			[ -n "$boot_enabled" ] || boot_enabled="$(service_boot_enabled && printf 1 || printf 0)"
 			host="$(default_host)"
 			[ -n "$port" ] || port="$CFG_PORT"
 			[ -n "$allow_wan_access" ] || allow_wan_access="$CFG_ALLOW_WAN_ACCESS"
 			[ -n "$nora_log_max_size" ] || nora_log_max_size="$CFG_NORA_LOG_MAX_SIZE"
 			[ -n "$plugin_log_max_size" ] || plugin_log_max_size="$CFG_PLUGIN_LOG_MAX_SIZE"
 
-			enabled="$(normalize_bool "$enabled")" || fail "invalid enabled"
 			validate_abs_path "$install_dir" || fail "invalid install_dir"
+			boot_enabled="$(normalize_bool "$boot_enabled")" || fail "invalid boot_enabled"
 			validate_host "$host" || fail "invalid host"
 			validate_port "$port" || fail "invalid port"
 			allow_wan_access="$(normalize_bool "$allow_wan_access")" || fail "invalid allow_wan_access"
 			validate_log_size "$nora_log_max_size" || fail "invalid nora_log_max_size"
 			validate_log_size "$plugin_log_max_size" || fail "invalid plugin_log_max_size"
 
+			if [ "$install_dir" != "$CFG_INSTALL_DIR" ] || [ "$host" != "$CFG_HOST" ] || [ "$port" != "$CFG_PORT" ]; then
+				restart_nora=1
+			fi
+
 			CFG_HOST="$host"
 			CFG_PORT="$port"
-			CFG_PUBLIC_URL="$public_url"
 			normalize_public_url
-			public_url="$CFG_PUBLIC_URL"
-			validate_url_or_empty "$public_url" || fail "invalid public_url"
+			validate_url_or_empty "$CFG_PUBLIC_URL" || fail "invalid public_url"
 
 			ensure_uci_section
-			set_uci_option enabled "$enabled"
+			delete_uci_option enabled
 			set_uci_option install_dir "$install_dir"
 			set_uci_option host "$host"
 			set_uci_option port "$port"
-			set_uci_option public_url "$public_url"
+			delete_uci_option public_url
 			set_uci_option allow_wan_access "$allow_wan_access"
 			set_uci_option nora_log_max_size "$nora_log_max_size"
 			set_uci_option plugin_log_max_size "$plugin_log_max_size"
+			if [ -x "$SERVICE_SCRIPT" ]; then
+				if [ "$boot_enabled" -eq 1 ]; then
+					"$SERVICE_SCRIPT" enable >/dev/null 2>&1 || fail "failed to enable init.d service"
+				else
+					"$SERVICE_SCRIPT" disable >/dev/null 2>&1 || fail "failed to disable init.d service"
+				fi
+			fi
 			changed=1
 			apply_firewall=1
 			;;
@@ -886,6 +913,10 @@ save_settings() {
 			anonymous_read="$(normalize_bool "$anonymous_read")" || fail "invalid anonymous_read"
 			validate_abs_path "$htpasswd_file" || fail "invalid htpasswd_file"
 			validate_abs_path "$token_storage" || fail "invalid token_storage"
+
+			if [ "$auth_enabled" != "$CFG_AUTH_ENABLED" ] || [ "$anonymous_read" != "$CFG_ANONYMOUS_READ" ] || [ "$htpasswd_file" != "$CFG_HTPASSWD_FILE" ] || [ "$token_storage" != "$CFG_TOKEN_STORAGE" ]; then
+				restart_nora=1
+			fi
 
 			ensure_uci_section
 			set_uci_option auth_enabled "$auth_enabled"
@@ -914,6 +945,10 @@ save_settings() {
 			validate_timeout "$npm_metadata_ttl" || fail "invalid npm_metadata_ttl"
 			validate_abs_path "$storage_path" || fail "invalid storage_path"
 
+			if [ "$npm_enabled" != "$CFG_NPM_ENABLED" ] || [ "$npm_proxy" != "$CFG_NPM_PROXY" ] || [ "$npm_proxy_timeout" != "$CFG_NPM_PROXY_TIMEOUT" ] || [ "$npm_metadata_ttl" != "$CFG_NPM_METADATA_TTL" ] || [ "$storage_path" != "$CFG_STORAGE_PATH" ]; then
+				restart_nora=1
+			fi
+
 			ensure_uci_section
 			set_uci_option npm_enabled "$npm_enabled"
 			set_uci_option npm_proxy "$npm_proxy"
@@ -938,11 +973,9 @@ save_settings() {
 	esac
 
 	if [ "$changed" -eq 1 ]; then
-		commit_uci_config
-		render_nora_config >/dev/null 2>&1 || fail "settings saved but failed to render Nora config"
-		[ "$apply_firewall" -eq 0 ] || firewall_apply >/dev/null 2>&1 || fail "settings saved but failed to apply firewall"
+		finish_save_settings "$section" "$apply_firewall" "$restart_nora"
 	fi
-	ok_message "save-settings" "settings saved"
+	ok_message "save-settings" "$SAVE_SETTINGS_MESSAGE"
 }
 
 download_binary() {
@@ -964,6 +997,7 @@ download_binary() {
 	else
 		url="https://github.com/getnora-io/nora/releases/download/$tag/$asset"
 	fi
+	plugin_log INFO "$2" "downloading Nora binary version=$tag arch=$CFG_RESOLVED_ARCH url=$url"
 
 	tmp="/tmp/nora-download.$$"
 	target_tmp="$CFG_INSTALL_DIR/bin/.nora.new.$$"
@@ -972,7 +1006,7 @@ download_binary() {
 	[ -s "$tmp" ] || fail "downloaded file is empty"
 	cp "$tmp" "$target_tmp" || fail "failed to stage binary"
 	chmod 0755 "$target_tmp" || fail "failed to chmod binary"
-	version_output="$($target_tmp --version 2>/dev/null || $target_tmp version 2>/dev/null || true)"
+	version_output="$(detect_binary_version "$target_tmp" || true)"
 	[ -n "$version_output" ] || fail "downloaded binary failed basic execution check"
 	if [ -e "$binary" ]; then
 		cp -fp "$binary" "$previous" || fail "failed to back up previous binary"
@@ -982,6 +1016,7 @@ download_binary() {
 		fail "failed to replace binary"
 	}
 	rm -f "$tmp"
+	plugin_log INFO "$2" "installed Nora binary version=$tag arch=$CFG_RESOLVED_ARCH detected_version=$version_output path=$binary"
 
 	json_init
 	json_add_boolean success 1
@@ -1002,6 +1037,7 @@ upload_binary() {
 	validate_upload_path "$upload_path" || fail "invalid upload path"
 	[ -s "$upload_path" ] || fail "uploaded binary is empty"
 	mkdir -p "$CFG_INSTALL_DIR/bin" || fail "failed to create binary directory"
+	plugin_log INFO upload-binary "staging uploaded Nora binary path=$upload_path"
 
 	binary="$CFG_INSTALL_DIR/bin/nora"
 	previous="$CFG_INSTALL_DIR/bin/nora.previous"
@@ -1009,7 +1045,7 @@ upload_binary() {
 	rm -f "$target_tmp"
 	cp "$upload_path" "$target_tmp" || fail "failed to stage uploaded binary"
 	chmod 0755 "$target_tmp" || fail "failed to chmod uploaded binary"
-	version_output="$($target_tmp --version 2>/dev/null || $target_tmp version 2>/dev/null || true)"
+	version_output="$(detect_binary_version "$target_tmp" || true)"
 	[ -n "$version_output" ] || fail "uploaded binary failed basic execution check"
 	if [ -e "$binary" ]; then
 		cp -fp "$binary" "$previous" || fail "failed to back up previous binary"
@@ -1019,6 +1055,7 @@ upload_binary() {
 		fail "failed to replace binary"
 	}
 	rm -f "$upload_path"
+	plugin_log INFO upload-binary "installed uploaded Nora binary detected_version=$version_output path=$binary"
 
 	json_init
 	json_add_boolean success 1
@@ -1034,6 +1071,7 @@ plugin_upgrade() {
 	require_command wget
 	require_command opkg
 	require_command sha256sum
+	plugin_log INFO plugin-upgrade "checking latest plugin release"
 
 	release_json="$(detect_plugin_latest_release || true)"
 	latest_version="$(printf '%s\n' "$release_json" | plugin_release_tag_from_json)"
@@ -1051,6 +1089,7 @@ plugin_upgrade() {
 	tmp_ipk="/tmp/$ipk_name"
 	tmp_sha="/tmp/$sha256_name"
 	rm -f "$tmp_ipk" "$tmp_sha"
+	plugin_log INFO plugin-upgrade "downloading plugin version=$latest_version ipk=$ipk_name"
 	wget -q -O "$tmp_ipk" "$ipk_url" || fail "plugin ipk download failed"
 	[ -s "$tmp_ipk" ] || fail "downloaded plugin ipk is empty"
 	wget -q -O "$tmp_sha" "$sha256_url" || fail "plugin sha256 download failed"
@@ -1063,6 +1102,7 @@ plugin_upgrade() {
 
 	install_output="$(opkg install "$tmp_ipk" 2>&1)" || fail "plugin install failed: $install_output"
 	rm -f "$tmp_ipk" "$tmp_sha" >/dev/null 2>&1 || true
+	plugin_log INFO plugin-upgrade "plugin upgraded version=$latest_version package_version=$package_version sha256=$actual"
 
 	json_init
 	json_add_boolean success 1
@@ -1081,6 +1121,7 @@ service_action() {
 	local binary
 
 	[ -x "$SERVICE_SCRIPT" ] || fail "service script missing"
+	plugin_log INFO "$action" "service action requested"
 
 	case "$action" in
 		start|restart)
@@ -1090,25 +1131,34 @@ service_action() {
 			if [ "$CFG_AUTH_ENABLED" -eq 1 ]; then
 				[ -s "$CFG_HTPASSWD_FILE" ] || fail "upload an htpasswd entry before starting Nora"
 			fi
-			if [ "$CFG_ENABLED" -ne 1 ]; then
-				require_command uci
-				uci set "$UCI_CONFIG.$UCI_SECTION.enabled=1" >/dev/null 2>&1 || fail "failed to enable service"
-				uci commit "$UCI_CONFIG" >/dev/null 2>&1 || fail "failed to save enabled state"
-			fi
 			render_nora_config >/dev/null 2>&1 || fail "failed to render Nora config before start"
 			;;
 	esac
 
 	"$SERVICE_SCRIPT" "$action" >/dev/null 2>&1 || fail "service action failed: $action"
+	plugin_log INFO "$action" "service $action command completed"
 
 	case "$action" in
 		start|restart)
 			sleep 1
 			detect_running "$binary" || fail "Nora exited during startup; check logread -e nora"
+			plugin_log INFO "$action" "Nora running after service $action"
+			if [ "$CFG_ALLOW_WAN_ACCESS" -eq 1 ]; then
+				plugin_log INFO "$action" "applying firewall after service $action"
+				firewall_apply >/dev/null 2>&1 || fail "service started but failed to apply firewall rule"
+			fi
+			;;
+		stop)
+			plugin_log INFO stop "removing firewall rule after service stop"
+			firewall_delete >/dev/null 2>&1 || fail "service stopped but failed to remove firewall rule"
 			;;
 	esac
 
 	ok_message "$action" "$action ok"
+}
+
+service_boot_enabled() {
+	[ -x "$SERVICE_SCRIPT" ] && "$SERVICE_SCRIPT" enabled >/dev/null 2>&1
 }
 
 set_htpasswd() {
@@ -1123,7 +1173,7 @@ set_htpasswd() {
 	chmod 0600 "$tmp" || fail "failed to chmod htpasswd file"
 	mv -f "$tmp" "$CFG_HTPASSWD_FILE" || fail "failed to replace htpasswd file"
 	message="htpasswd updated"
-	if [ "$CFG_ENABLED" -eq 1 ] && [ -x "$CFG_INSTALL_DIR/bin/nora" ]; then
+	if [ -x "$CFG_INSTALL_DIR/bin/nora" ] && detect_running "$CFG_INSTALL_DIR/bin/nora"; then
 		[ -x "$SERVICE_SCRIPT" ] || fail "htpasswd updated but service script missing"
 		"$SERVICE_SCRIPT" restart >/dev/null 2>&1 || fail "htpasswd updated but restart failed"
 		message="$message and Nora restarted"
@@ -1131,6 +1181,20 @@ set_htpasswd() {
 		message="$message without restart"
 	fi
 	ok_message "set-htpasswd" "$message"
+}
+
+firewall_reload() {
+	if [ -x /etc/init.d/firewall ]; then
+		/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || fail "failed to reload firewall"
+	fi
+}
+
+firewall_delete() {
+	command -v uci >/dev/null 2>&1 || fail "uci command missing"
+
+	uci -q delete firewall.nora >/dev/null 2>&1 || true
+	uci commit firewall || fail "failed to commit firewall"
+	firewall_reload
 }
 
 firewall_apply() {
@@ -1147,13 +1211,12 @@ firewall_apply() {
 		uci set firewall.nora.target='ACCEPT' || fail "failed to set firewall target"
 		uci commit firewall || fail "failed to commit firewall"
 	else
-		uci -q delete firewall.nora >/dev/null 2>&1
-		uci commit firewall || fail "failed to commit firewall"
+		firewall_delete
+		ok_message "firewall-apply" "firewall updated"
+		return 0
 	fi
 
-	if [ -x /etc/init.d/firewall ]; then
-		/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || fail "failed to reload firewall"
-	fi
+	firewall_reload
 
 	ok_message "firewall-apply" "firewall updated"
 }
@@ -1176,6 +1239,7 @@ detect_running() {
 collect_status() {
 	local binary config_path installed running htpasswd_present detected_version
 	config_load_raw_values
+	normalize_public_url
 	CFG_RESOLVED_ARCH="$(resolve_architecture "$CFG_ARCHITECTURE" 2>/dev/null || true)"
 	binary="$CFG_INSTALL_DIR/bin/nora"
 	config_path="$CFG_INSTALL_DIR/config/config.toml"
@@ -1188,13 +1252,13 @@ collect_status() {
 		running=1
 	fi
 	if [ "$installed" -eq 1 ]; then
-		detected_version="$($binary --version 2>/dev/null || $binary version 2>/dev/null || true)"
+		detected_version="$(detect_binary_version "$binary" || true)"
 	fi
 	json_init
 	json_add_boolean success 1
-	json_add_boolean enabled "$CFG_ENABLED"
 	json_add_boolean installed "$installed"
 	json_add_boolean running "$running"
+	json_add_boolean boot_enabled "$(service_boot_enabled && printf 1 || printf 0)"
 	json_add_string install_dir "$CFG_INSTALL_DIR"
 	json_add_string version "$CFG_VERSION"
 	json_add_string architecture "$CFG_ARCHITECTURE"
@@ -1226,11 +1290,10 @@ read_uci_config() {
 	json_add_boolean success 1
 
 	json_add_object global
-	json_add_boolean enabled "$CFG_ENABLED"
 	json_add_string install_dir "$CFG_INSTALL_DIR"
+	json_add_boolean boot_enabled "$(service_boot_enabled && printf 1 || printf 0)"
 	json_add_string host "$CFG_HOST"
 	json_add_int port "$CFG_PORT"
-	json_add_string public_url "$CFG_PUBLIC_URL"
 	json_add_boolean allow_wan_access "$CFG_ALLOW_WAN_ACCESS"
 	json_add_int nora_log_max_size "$CFG_NORA_LOG_MAX_SIZE"
 	json_add_int plugin_log_max_size "$CFG_PLUGIN_LOG_MAX_SIZE"

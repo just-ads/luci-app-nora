@@ -7,11 +7,14 @@ msgstr "Nora"
 msgid "Global service settings"
 msgstr "全局服务设置"
 
-msgid "Enable service"
-msgstr "启用服务"
-
 msgid "Install directory"
 msgstr "安装目录"
+
+msgid "Start on boot"
+msgstr "开机自启"
+
+msgid "Enable or disable Nora in the OpenWrt init.d startup list."
+msgstr "在 OpenWrt init.d 启动列表中启用或禁用 Nora。"
 
 msgid "Architecture"
 msgstr "架构"
@@ -21,12 +24,6 @@ msgstr "自动检测"
 
 msgid "Port"
 msgstr "端口"
-
-msgid "Public URL"
-msgstr "公共 URL"
-
-msgid "Leave empty to omit Nora public_url; the service listens on the router LAN IP by default."
-msgstr "留空则不写入 Nora public_url；服务默认监听路由器 LAN IP。"
 
 msgid "Nora log max size"
 msgstr "Nora 日志最大大小"
@@ -144,9 +141,6 @@ msgstr "当前版本"
 
 msgid "Detected but version string is unavailable"
 msgstr "已检测到，但版本字符串不可用"
-
-msgid "Service enabled state"
-msgstr "服务启用状态"
 
 msgid "Authentication state"
 msgstr "认证状态"

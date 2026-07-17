@@ -69,6 +69,8 @@ if [ -z "$${IPKG_INSTROOT}" ]; then
 			/etc/init.d/nora restart >/dev/null 2>&1 || logger -t luci-app-nora "failed to restart Nora after package upgrade"
 		fi
 		rm -f /tmp/luci-app-nora.was-running >/dev/null 2>&1 || true
+	elif [ -x /etc/init.d/nora ]; then
+		/etc/init.d/nora enable >/dev/null 2>&1 || logger -t luci-app-nora "failed to enable Nora at boot during postinst"
 	fi
 	rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* >/dev/null 2>&1 || true
 	/etc/init.d/rpcd reload >/dev/null 2>&1 || true
@@ -84,6 +86,7 @@ define Package/$(PKG_NAME)/prerm
 if [ "$${1:-remove}" != "upgrade" ] && [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/nora ]; then
 	/etc/init.d/nora stop >/dev/null 2>&1 || true
 	/etc/init.d/nora disable >/dev/null 2>&1 || true
+	rm -f /etc/init.d/nora >/dev/null 2>&1 || true
 	uci -q delete firewall.nora >/dev/null 2>&1 || true
 	uci commit firewall >/dev/null 2>&1 || true
 	/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true
