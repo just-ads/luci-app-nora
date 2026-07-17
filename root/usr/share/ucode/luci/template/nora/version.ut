@@ -100,10 +100,17 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		return !!(c && l && c !== l);
 	}
 
+	function pluginUpgrade() {
+		return callPluginUpgrade().then(function() {
+			setTimeout(function() { window.location.reload(); }, 2500);
+			return { message: '{{ _("Plugin upgrade completed; reloading page to reconnect...") }}' };
+		});
+	}
+
 	bindBtn('nora-btn-install', '{{ _("Install") }}', '{{ _("Installing...") }}', function() { return callInstall('latest'); });
 	bindBtn('nora-btn-upgrade', '{{ _("Upgrade") }}', '{{ _("Upgrading...") }}', function() { return callUpgrade(); });
 	document.getElementById('nora-btn-upgrade').disabled = true;
-	bindBtn('nora-btn-plugin-upgrade', '{{ _("Upgrade") }}', '{{ _("Upgrading...") }}', function() { return callPluginUpgrade(); });
+	bindBtn('nora-btn-plugin-upgrade', '{{ _("Upgrade") }}', '{{ _("Upgrading...") }}', pluginUpgrade);
 	document.getElementById('nora-btn-plugin-upgrade').disabled = true;
 	bindBtn('nora-btn-upload', '{{ _("Upload Nora binary") }}', '{{ _("Uploading...") }}', function(ev) {
 		var p = '/tmp/nora-upload-' + Date.now();

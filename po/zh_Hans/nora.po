@@ -224,6 +224,9 @@ msgid "Upgrading..."
 msgstr "升级中..."
 
 msgid "Installing..."
+msgid "Plugin upgrade completed; reloading page to reconnect..."
+msgstr "插件升级已完成，正在刷新页面以重新连接..."
+
 msgstr "安装中..."
 
 msgid "Unavailable"

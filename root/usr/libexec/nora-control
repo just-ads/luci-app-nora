@@ -11,6 +11,8 @@ PLUGIN_REPO="just-ads/luci-app-nora"
 DEFAULT_LOG_MAX_SIZE="1048576"
 DEFAULT_LOG_READ_LIMIT="262144"
 MAX_LOG_READ_LIMIT="2097152"
+DEFER_RPCD_RELOAD_MARKER="/tmp/.nora-defer-rpcd-reload"
+NEEDS_RPCD_RELOAD_MARKER="/tmp/luci-app-nora.needs-rpcd-reload"
 
 json_escape() {
 	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{ if (NR > 1) printf "\\n"; printf "%s", $0 }'
@@ -1100,9 +1102,23 @@ plugin_upgrade() {
 	[ -n "$actual" ] || fail "failed to calculate plugin ipk sha256"
 	[ "$expected" = "$actual" ] || fail "plugin ipk sha256 mismatch"
 
-	install_output="$(opkg install "$tmp_ipk" 2>&1)" || fail "plugin install failed: $install_output"
+	rm -f "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+	: > "$DEFER_RPCD_RELOAD_MARKER"
+	install_output="$(opkg install "$tmp_ipk" 2>&1)" || {
+		rm -f "$DEFER_RPCD_RELOAD_MARKER" "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+		fail "plugin install failed: $install_output"
+	}
+	rm -f "$DEFER_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
 	rm -f "$tmp_ipk" "$tmp_sha" >/dev/null 2>&1 || true
 	plugin_log INFO plugin-upgrade "plugin upgraded version=$latest_version package_version=$package_version sha256=$actual"
+	if [ -f "$NEEDS_RPCD_RELOAD_MARKER" ]; then
+		(
+			sleep 2
+			rm -f "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+			/etc/init.d/rpcd reload >/dev/null 2>&1 || true
+		) >/dev/null 2>&1 &
+		plugin_log INFO plugin-upgrade "scheduled deferred rpcd reload"
+	fi
 
 	json_init
 	json_add_boolean success 1

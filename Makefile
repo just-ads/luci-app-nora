@@ -73,7 +73,11 @@ if [ -z "$${IPKG_INSTROOT}" ]; then
 		/etc/init.d/nora enable >/dev/null 2>&1 || logger -t luci-app-nora "failed to enable Nora at boot during postinst"
 	fi
 	rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* >/dev/null 2>&1 || true
-	/etc/init.d/rpcd reload >/dev/null 2>&1 || true
+	if [ -f /tmp/.nora-defer-rpcd-reload ]; then
+		: > /tmp/luci-app-nora.needs-rpcd-reload
+	else
+		/etc/init.d/rpcd reload >/dev/null 2>&1 || true
+	fi
 fi
 
 exit 0
