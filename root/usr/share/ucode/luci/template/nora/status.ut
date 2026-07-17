@@ -49,9 +49,6 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	function sc(kind) { return kind === 'ok' ? 'nora-status-ok' : kind === 'warn' ? 'nora-status-warn' : 'nora-status-stop'; }
 
 	function noraUiUrl(s) {
-		if (s.public_url)
-			return s.public_url;
-
 		var host = window.location.hostname;
 		var port = s.port || '4873';
 
