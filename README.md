@@ -1,55 +1,49 @@
 # luci-app-nora
 
-用于在 OpenWrt 上部署和管理 Nora 的 LuCI 应用。
+在 OpenWrt 的 LuCI 中部署和管理 Nora，让路由器可以作为私有 Registries 使用。
 
-## 功能特性
+## 主要功能
 
-- 通过 `/etc/config/nora` 使用 UCI 管理 Nora 配置
-- 通过 `/etc/init.d/nora` 使用 procd 管理服务
-- 提供安装、升级、配置生成和外网访问控制功能
-- 在 LuCI 的“服务”菜单中提供 Nora 管理页面
-- 支持启停、重启和运行状态查看
-- 支持配置监听地址、端口、公开 URL、存储路径和 npm 上游代理
-- 可选允许外网访问，启用时仅维护专属的 `firewall.nora` WAN 放行规则
-- 支持上传单用户 bcrypt htpasswd 行，认证信息不会写入 UCI
-- 支持 `amd64`、`arm64` 和 `armv7`，也可自动识别设备架构
+- **可视化安装与运行**：在 LuCI 页面安装 Nora，查看运行状态和当前版本，并执行启动、停止或重启。
+- **局域网与外网访问**：自定义服务端口，页面会生成可直接访问的 Nora 地址；需要时可单独开放 WAN 访问。
+- **版本更新**：检查并升级 Nora 核心和 LuCI 插件，也支持手动上传 Nora 二进制。
+- **多架构支持**：可自动识别设备架构，支持 `amd64`、`arm64` 和 `armv7`。
+- **配置管理**：通过表单保存设置，生成并查看 Nora 的最终配置文件。
+- **日志查看**：分别查看 Nora 日志和插件操作日志，支持手动刷新、自动刷新和日志大小限制。
 
-## 软件包结构
+## 快速开始
 
-- `root/etc/config/nora`：默认 UCI 配置
-- `root/etc/init.d/nora`：procd 服务脚本
-- `root/usr/libexec/nora-control`：安装、升级、配置生成和外网访问控制脚本
-- `root/usr/libexec/rpcd/luci.nora`：供 LuCI 调用的固定 rpcd 方法
-- `root/usr/share/ucode/luci/template/nora/*.ut`：按页面拆分的 LuCI 模板视图
-- `root/www/luci-static/resources/nora/css/nora.css`：Nora 管理页面样式
-- `root/usr/share/luci/menu.d/luci-app-nora.json`：LuCI 菜单项
-- `root/usr/share/rpcd/acl.d/luci-app-nora.json`：UCI `nora` 和 ubus `luci.nora` 的访问控制规则
-- `po/zh_Hans/nora.po`：简体中文翻译
+1. 安装 `luci-app-nora` 软件包。
+2. 打开 LuCI，进入“服务 → Nora”。
+3. 在“版本更新”页面安装适合当前设备的 Nora。
+4. 在“插件设置”和“npm Registry”页面完成端口、认证、存储及上游代理配置。
+5. 返回“运行状态”页面启动 Nora，并通过页面显示的地址访问 Nora UI。
+
+## 默认设置
+
+- 安装目录：`/opt/nora`
+- 访问端口：`4873`
+- 默认账号：`admin`
+- 默认密码：`admin`
+- 登录认证默认开启，匿名读取默认关闭
+- npm 上游代理默认为空，此时仅提供私有软件包服务
+- WAN 访问默认关闭
+
+首次登录后，请立即在“插件设置”中上传新的 bcrypt htpasswd，替换默认账号密码。
+
+## 数据与卸载
+
+Nora 的软件包、令牌和配置数据默认保存在 `/opt/nora`。卸载 LuCI 插件时会保留该目录，避免误删已有仓库数据；不再需要时可自行备份后清理。
 
 ## 编译
 
-将本目录复制到 OpenWrt 源码树或 SDK，例如：
-
-```sh
-package/luci-app-nora
-```
-
-然后选择并编译软件包：
+将本目录放入 OpenWrt 源码树或 SDK 的 `package/luci-app-nora`，然后执行：
 
 ```sh
 make menuconfig
 # LuCI -> Applications -> luci-app-nora
 make package/luci-app-nora/compile V=s
 ```
-
-## 使用说明
-
-- 默认安装目录为 `/opt/nora`，默认监听端口为 `4873`。
-- 默认启用认证且关闭匿名读取，初始用户名和密码为 `admin` / `admin`。首次登录后应立即上传新的 bcrypt htpasswd 以更换默认密码。
-- npm 上游代理为空时，Nora 以纯私有 npm Registry 模式运行。
-- 修改配置后，请先执行“保存并应用”，再生成配置或操作服务。
-- 服务启动和前台调试均通过 `NORA_CONFIG_PATH` 指定配置文件，并直接运行 `nora` 二进制。
-- 卸载软件包时会保留 `/opt/nora` 下的 Nora 数据。
 
 ## 参考文档
 
