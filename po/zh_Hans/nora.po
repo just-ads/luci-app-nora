@@ -181,9 +181,6 @@ msgstr "重启"
 msgid "Restarting..."
 msgstr "重启中..."
 
-msgid "Installed status"
-msgstr "安装状态"
-
 msgid "Installed"
 msgstr "已安装"
 
@@ -195,6 +192,18 @@ msgstr "当前已安装版本"
 
 msgid "New version"
 msgstr "新版本"
+
+msgid "Nora core"
+msgstr "Nora 核心"
+
+msgid "LuCI plugin"
+msgstr "LuCI 插件"
+
+msgid "Current plugin version"
+msgstr "当前插件版本"
+
+msgid "Latest plugin version"
+msgstr "最新插件版本"
 
 msgid "Resolved architecture"
 msgstr "解析后的架构"
@@ -223,10 +232,10 @@ msgstr "上传 Nora 二进制文件"
 msgid "Upgrading..."
 msgstr "升级中..."
 
-msgid "Installing..."
 msgid "Plugin upgrade completed; reloading page to reconnect..."
 msgstr "插件升级已完成，正在刷新页面以重新连接..."
 
+msgid "Installing..."
 msgstr "安装中..."
 
 msgid "Unavailable"

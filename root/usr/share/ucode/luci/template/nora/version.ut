@@ -10,7 +10,6 @@
 			<div class="nora-card">
 				<h3 id="nora-v-action-title">{{ _("Nora core") }}</h3>
 				<div class="nora-grid">
-					<div><div class="nora-meta">{{ _("Installed status") }}</div><div class="nora-value" id="nora-v-status">-</div></div>
 					<div><div class="nora-meta">{{ _("Current installed version") }}</div><div class="nora-value" id="nora-v-current">-</div></div>
 					<div><div class="nora-meta">{{ _("New version") }}</div><div class="nora-value" id="nora-v-latest">-</div></div>
 				</div>
@@ -25,7 +24,6 @@
 				<div class="nora-grid">
 					<div><div class="nora-meta">{{ _("Current plugin version") }}</div><div class="nora-value" id="nora-plugin-current">-</div></div>
 					<div><div class="nora-meta">{{ _("Latest plugin version") }}</div><div class="nora-value" id="nora-plugin-latest">-</div></div>
-					<div><div class="nora-meta">{{ _("Plugin package") }}</div><div class="nora-value" id="nora-plugin-package">-</div></div>
 				</div>
 				<div class="nora-actions">
 					<button class="btn cbi-button cbi-button-action" type="button" id="nora-btn-plugin-upgrade" disabled>{{ _("Upgrade") }}</button>
@@ -73,8 +71,6 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 	var callPluginUpgrade = rpc.declare({ object: 'luci.nora', method: 'plugin_upgrade', expect: { '': {} } });
 	var callUploadBinary = rpc.declare({ object: 'luci.nora', method: 'upload_binary', params: [ 'path' ], expect: { '': {} } });
 	var callSaveSettings = rpc.declare({ object: 'luci.nora', method: 'save_settings', params: [ 'section', 'settings' ], expect: { '': {} } });
-
-	function sc(kind) { return kind === 'ok' ? 'nora-status-ok' : kind === 'warn' ? 'nora-status-warn' : 'nora-status-stop'; }
 
 	function bindBtn(id, label, busy, handler) {
 		var btn = document.getElementById(id);
@@ -146,8 +142,6 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 		]).then(function(results) {
 			var s = results[0] || {}, ps = results[1] || {};
 			var inst = !!s.installed;
-			document.getElementById('nora-v-status').textContent = inst ? '{{ _("Installed") }}' : '{{ _("Not installed") }}';
-			document.getElementById('nora-v-status').className = 'nora-value ' + sc(inst ? 'ok' : 'warn');
 			document.getElementById('nora-v-current').textContent = s.installed_version || (inst ? '{{ _("Detected but version string is unavailable") }}' : '{{ _("Not installed") }}');
 			document.getElementById('nora-btn-install').style.display = inst ? 'none' : '';
 			document.getElementById('nora-btn-install').disabled = inst;
@@ -157,7 +151,6 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 			var archEl = document.querySelector('#nora-v-form [name="cbid.nora.config.architecture"]');
 			if (archEl) archEl.value = s.architecture || 'auto';
 			document.getElementById('nora-plugin-current').textContent = ps.current_version || '{{ _("Unavailable") }}';
-			document.getElementById('nora-plugin-package').textContent = ps.package || 'luci-app-nora';
 			L.resolveDefault(callLatestVersion(), {}).then(function(latest) {
 				var lv = latest && latest.latest_version;
 				latestEl.textContent = lv || '{{ _("Unavailable") }}';
