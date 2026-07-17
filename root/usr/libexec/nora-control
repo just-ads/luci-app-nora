@@ -6,6 +6,7 @@
 UCI_CONFIG="nora"
 UCI_SECTION="config"
 SERVICE_SCRIPT="/etc/init.d/nora"
+NORA_REPO="getnora-io/nora"
 PLUGIN_PACKAGE="luci-app-nora"
 PLUGIN_I18N_PACKAGE="luci-i18n-nora-zh-cn"
 PLUGIN_REPO="just-ads/luci-app-nora"
@@ -14,6 +15,10 @@ DEFAULT_LOG_READ_LIMIT="262144"
 MAX_LOG_READ_LIMIT="2097152"
 DEFER_RPCD_RELOAD_MARKER="/tmp/.nora-defer-rpcd-reload"
 NEEDS_RPCD_RELOAD_MARKER="/tmp/luci-app-nora.needs-rpcd-reload"
+
+# -----------------------------------------------------------------------------
+# Common utilities
+# -----------------------------------------------------------------------------
 
 json_escape() {
 	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | awk '{ if (NR > 1) printf "\\n"; printf "%s", $0 }'
@@ -207,6 +212,25 @@ validate_url_or_empty() {
 	printf '%s' "$url" | grep -Eq '^[^[:space:]<>"]+$'
 }
 
+github_latest_release() {
+	local repository="$1"
+
+	command -v wget >/dev/null 2>&1 || return 1
+	wget -q -O - "https://api.github.com/repos/$repository/releases/latest" 2>/dev/null
+}
+
+github_release_tag_from_json() {
+	sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '1p'
+}
+
+toml_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+# -----------------------------------------------------------------------------
+# Nora operations
+# -----------------------------------------------------------------------------
+
 detect_openwrt_ip() {
 	local ip candidate
 
@@ -260,137 +284,17 @@ normalize_public_url() {
 	CFG_PUBLIC_URL="$(default_public_url)"
 }
 
-detect_latest_version() {
-	command -v wget >/dev/null 2>&1 || return 1
-	wget -q -O - 'https://api.github.com/repos/getnora-io/nora/releases/latest' 2>/dev/null |
-		sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
-		sed -n '1p'
+detect_nora_latest_version() {
+	github_latest_release "$NORA_REPO" | github_release_tag_from_json
 }
 
-collect_latest_version() {
+collect_nora_latest_version() {
 	local latest_version
-	latest_version="$(detect_latest_version || true)"
+	latest_version="$(detect_nora_latest_version || true)"
 	json_init
 	json_add_boolean success 1
 	json_add_string action latest-version
 	json_add_string latest_version "$latest_version"
-	json_dump
-}
-
-plugin_current_version() {
-	command -v opkg >/dev/null 2>&1 || return 1
-	opkg status "$PLUGIN_PACKAGE" 2>/dev/null | sed -n 's/^Version:[[:space:]]*//p' | sed -n '1p'
-}
-
-detect_plugin_latest_release() {
-	command -v wget >/dev/null 2>&1 || return 1
-	wget -q -O - "https://api.github.com/repos/$PLUGIN_REPO/releases/latest" 2>/dev/null
-}
-
-plugin_release_tag_from_json() {
-	sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '1p'
-}
-
-plugin_release_ipk_url_from_json() {
-	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-app-nora_[^"]*_all\.ipk\)".*/\1/p' | sed -n '1p'
-}
-
-plugin_release_sha256_url_from_json() {
-	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-app-nora_[^"]*_all\.ipk\.sha256\)".*/\1/p' | sed -n '1p'
-}
-
-plugin_release_i18n_ipk_url_from_json() {
-	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-i18n-nora-zh-cn_[^"]*_all\.ipk\)".*/\1/p' | sed -n '1p'
-}
-
-plugin_release_i18n_sha256_url_from_json() {
-	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-i18n-nora-zh-cn_[^"]*_all\.ipk\.sha256\)".*/\1/p' | sed -n '1p'
-}
-
-plugin_asset_name_from_url() {
-	local url="$1"
-	printf '%s' "${url##*/}"
-}
-
-plugin_version_from_ipk_name() {
-	local name="$1" version
-	version="${name#luci-app-nora_}"
-	version="${version%_all.ipk}"
-	[ "$version" != "$name" ] || return 1
-	printf '%s' "$version"
-}
-
-plugin_i18n_version_from_ipk_name() {
-	local name="$1" version
-	version="${name#luci-i18n-nora-zh-cn_}"
-	version="${version%_all.ipk}"
-	[ "$version" != "$name" ] || return 1
-	printf '%s' "$version"
-}
-
-validate_plugin_asset_url() {
-	local url="$1"
-	case "$url" in
-		https://github.com/$PLUGIN_REPO/releases/download/*/luci-app-nora_*_all.ipk|https://github.com/$PLUGIN_REPO/releases/download/*/luci-app-nora_*_all.ipk.sha256|https://github.com/$PLUGIN_REPO/releases/download/*/luci-i18n-nora-zh-cn_*_all.ipk|https://github.com/$PLUGIN_REPO/releases/download/*/luci-i18n-nora-zh-cn_*_all.ipk.sha256) return 0 ;;
-		*) return 1 ;;
-	esac
-}
-
-collect_plugin_latest_version() {
-	local release_json latest_version package_version i18n_package_version ipk_url sha256_url i18n_ipk_url i18n_sha256_url ipk_name i18n_ipk_name current_version upgrade_available
-	release_json="$(detect_plugin_latest_release || true)"
-	latest_version="$(printf '%s\n' "$release_json" | plugin_release_tag_from_json)"
-	ipk_url="$(printf '%s\n' "$release_json" | plugin_release_ipk_url_from_json)"
-	sha256_url="$(printf '%s\n' "$release_json" | plugin_release_sha256_url_from_json)"
-	i18n_ipk_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_ipk_url_from_json)"
-	i18n_sha256_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_sha256_url_from_json)"
-	ipk_name="$(plugin_asset_name_from_url "$ipk_url")"
-	i18n_ipk_name="$(plugin_asset_name_from_url "$i18n_ipk_url")"
-	package_version="$(plugin_version_from_ipk_name "$ipk_name" 2>/dev/null || true)"
-	i18n_package_version="$(plugin_i18n_version_from_ipk_name "$i18n_ipk_name" 2>/dev/null || true)"
-	current_version="$(plugin_current_version || true)"
-	upgrade_available=0
-	[ -n "$package_version" ] && [ -n "$current_version" ] && [ "$package_version" != "$current_version" ] && upgrade_available=1
-
-	json_init
-	json_add_boolean success 1
-	json_add_string action plugin-latest-version
-	json_add_string package "$PLUGIN_PACKAGE"
-	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
-	json_add_string repository "$PLUGIN_REPO"
-	json_add_string current_version "$current_version"
-	json_add_string latest_version "$latest_version"
-	json_add_string package_version "$package_version"
-	json_add_string i18n_package_version "$i18n_package_version"
-	json_add_string ipk_name "$ipk_name"
-	json_add_string i18n_ipk_name "$i18n_ipk_name"
-	json_add_string ipk_url "$ipk_url"
-	json_add_string sha256_url "$sha256_url"
-	json_add_string i18n_ipk_url "$i18n_ipk_url"
-	json_add_string i18n_sha256_url "$i18n_sha256_url"
-	json_add_boolean upgrade_available "$upgrade_available"
-	json_dump
-}
-
-collect_plugin_status() {
-	local current_version opkg_available wget_available sha256sum_available
-	current_version="$(plugin_current_version || true)"
-	opkg_available=0; wget_available=0; sha256sum_available=0
-	command -v opkg >/dev/null 2>&1 && opkg_available=1
-	command -v wget >/dev/null 2>&1 && wget_available=1
-	command -v sha256sum >/dev/null 2>&1 && sha256sum_available=1
-
-	json_init
-	json_add_boolean success 1
-	json_add_string action plugin-status
-	json_add_string package "$PLUGIN_PACKAGE"
-	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
-	json_add_string repository "$PLUGIN_REPO"
-	json_add_string current_version "$current_version"
-	json_add_boolean installed "$( [ -n "$current_version" ] && printf 1 || printf 0 )"
-	json_add_boolean opkg_available "$opkg_available"
-	json_add_boolean wget_available "$wget_available"
-	json_add_boolean sha256sum_available "$sha256sum_available"
 	json_dump
 }
 
@@ -424,10 +328,6 @@ validate_htpasswd_line() {
 	return 0
 }
 
-toml_escape() {
-	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
-}
-
 resolve_architecture() {
 	local configured="$1"
 	local detected
@@ -446,7 +346,7 @@ resolve_architecture() {
 	esac
 }
 
-normalize_version() {
+normalize_nora_version() {
 	case "$1" in
 		latest) printf '%s' 'latest' ;;
 		v*) printf '%s' "$1" ;;
@@ -454,7 +354,7 @@ normalize_version() {
 	esac
 }
 
-detect_binary_version() {
+detect_nora_binary_version() {
 	local binary="$1"
 	[ -x "$binary" ] || return 1
 	"$binary" --version 2>/dev/null || "$binary" version 2>/dev/null
@@ -513,7 +413,7 @@ config_load_upgrade_values() {
 	validate_version "$CFG_VERSION" || fail "invalid version"
 }
 
-config_load_download_values() {
+config_load_nora_binary_values() {
 	config_load "$UCI_CONFIG" || fail "unable to load UCI config nora"
 
 	config_get CFG_INSTALL_DIR "$UCI_SECTION" install_dir '/opt/nora'
@@ -1007,36 +907,36 @@ save_settings() {
 	ok_message "save-settings" "$SAVE_SETTINGS_MESSAGE"
 }
 
-download_binary() {
-	local target_version="$1"
-	local tag asset url tmp target_tmp binary previous version_output
+nora_binary_release_url() {
+	local tag="$1" architecture="$2" asset
+	asset="nora-linux-$architecture"
 
-	config_load_download_values
-	mkdir -p "$CFG_INSTALL_DIR/bin" || fail "failed to create binary directory"
-	require_command wget
-	validate_version "$target_version" || fail "invalid install version"
+	if [ "$tag" = "latest" ]; then
+		printf 'https://github.com/%s/releases/latest/download/%s' "$NORA_REPO" "$asset"
+	else
+		printf 'https://github.com/%s/releases/download/%s/%s' "$NORA_REPO" "$tag" "$asset"
+	fi
+}
+
+download_nora_binary_asset() {
+	local url="$1" destination="$2"
+
+	rm -f "$destination"
+	wget -q -O "$destination" "$url" || fail "download failed"
+	[ -s "$destination" ] || fail "downloaded file is empty"
+}
+
+install_nora_binary_candidate() {
+	local source="$1" target_tmp="$2" stage_error="$3" verify_error="$4"
+	local binary previous
 
 	binary="$CFG_INSTALL_DIR/bin/nora"
 	previous="$CFG_INSTALL_DIR/bin/nora.previous"
-	asset="nora-linux-$CFG_RESOLVED_ARCH"
-	tag="$(normalize_version "$target_version")"
-
-	if [ "$tag" = "latest" ]; then
-		url="https://github.com/getnora-io/nora/releases/latest/download/$asset"
-	else
-		url="https://github.com/getnora-io/nora/releases/download/$tag/$asset"
-	fi
-	plugin_log INFO "$2" "downloading Nora binary version=$tag arch=$CFG_RESOLVED_ARCH url=$url"
-
-	tmp="/tmp/nora-download.$$"
-	target_tmp="$CFG_INSTALL_DIR/bin/.nora.new.$$"
-	rm -f "$tmp" "$target_tmp"
-	wget -q -O "$tmp" "$url" || fail "download failed"
-	[ -s "$tmp" ] || fail "downloaded file is empty"
-	cp "$tmp" "$target_tmp" || fail "failed to stage binary"
+	rm -f "$target_tmp"
+	cp "$source" "$target_tmp" || fail "$stage_error"
 	chmod 0755 "$target_tmp" || fail "failed to chmod binary"
-	version_output="$(detect_binary_version "$target_tmp" || true)"
-	[ -n "$version_output" ] || fail "downloaded binary failed basic execution check"
+	NORA_BINARY_DETECTED_VERSION="$(detect_nora_binary_version "$target_tmp" || true)"
+	[ -n "$NORA_BINARY_DETECTED_VERSION" ] || fail "$verify_error"
 	if [ -e "$binary" ]; then
 		cp -fp "$binary" "$previous" || fail "failed to back up previous binary"
 	fi
@@ -1044,6 +944,27 @@ download_binary() {
 		[ -e "$previous" ] && [ ! -e "$binary" ] && cp -fp "$previous" "$binary" >/dev/null 2>&1 || true
 		fail "failed to replace binary"
 	}
+}
+
+download_nora_binary() {
+	local target_version="$1"
+	local tag url tmp target_tmp binary version_output
+
+	config_load_nora_binary_values
+	mkdir -p "$CFG_INSTALL_DIR/bin" || fail "failed to create binary directory"
+	require_command wget
+	validate_version "$target_version" || fail "invalid install version"
+
+	binary="$CFG_INSTALL_DIR/bin/nora"
+	tag="$(normalize_nora_version "$target_version")"
+	url="$(nora_binary_release_url "$tag" "$CFG_RESOLVED_ARCH")"
+	plugin_log INFO "$2" "downloading Nora binary version=$tag arch=$CFG_RESOLVED_ARCH url=$url"
+
+	tmp="/tmp/nora-download.$$"
+	target_tmp="$CFG_INSTALL_DIR/bin/.nora.new.$$"
+	download_nora_binary_asset "$url" "$tmp"
+	install_nora_binary_candidate "$tmp" "$target_tmp" "failed to stage binary" "downloaded binary failed basic execution check"
+	version_output="$NORA_BINARY_DETECTED_VERSION"
 	rm -f "$tmp"
 	plugin_log INFO "$2" "installed Nora binary version=$tag arch=$CFG_RESOLVED_ARCH detected_version=$version_output path=$binary"
 
@@ -1058,31 +979,20 @@ download_binary() {
 	json_dump
 }
 
-upload_binary() {
+upload_nora_binary() {
 	local upload_path="$1"
-	local target_tmp binary previous version_output
+	local target_tmp binary version_output
 
-	config_load_download_values
+	config_load_nora_binary_values
 	validate_upload_path "$upload_path" || fail "invalid upload path"
 	[ -s "$upload_path" ] || fail "uploaded binary is empty"
 	mkdir -p "$CFG_INSTALL_DIR/bin" || fail "failed to create binary directory"
 	plugin_log INFO upload-binary "staging uploaded Nora binary path=$upload_path"
 
 	binary="$CFG_INSTALL_DIR/bin/nora"
-	previous="$CFG_INSTALL_DIR/bin/nora.previous"
 	target_tmp="$CFG_INSTALL_DIR/bin/.nora.upload.$$"
-	rm -f "$target_tmp"
-	cp "$upload_path" "$target_tmp" || fail "failed to stage uploaded binary"
-	chmod 0755 "$target_tmp" || fail "failed to chmod uploaded binary"
-	version_output="$(detect_binary_version "$target_tmp" || true)"
-	[ -n "$version_output" ] || fail "uploaded binary failed basic execution check"
-	if [ -e "$binary" ]; then
-		cp -fp "$binary" "$previous" || fail "failed to back up previous binary"
-	fi
-	mv -f "$target_tmp" "$binary" || {
-		[ -e "$previous" ] && [ ! -e "$binary" ] && cp -fp "$previous" "$binary" >/dev/null 2>&1 || true
-		fail "failed to replace binary"
-	}
+	install_nora_binary_candidate "$upload_path" "$target_tmp" "failed to stage uploaded binary" "uploaded binary failed basic execution check"
+	version_output="$NORA_BINARY_DETECTED_VERSION"
 	rm -f "$upload_path"
 	plugin_log INFO upload-binary "installed uploaded Nora binary detected_version=$version_output path=$binary"
 
@@ -1091,121 +1001,6 @@ upload_binary() {
 	json_add_string action "upload-binary"
 	json_add_string binary "$binary"
 	json_add_string detected_version "$version_output"
-	json_dump
-}
-
-plugin_upgrade() {
-	local release_json latest_version package_version i18n_package_version ipk_url sha256_url i18n_ipk_url i18n_sha256_url ipk_name sha256_name i18n_ipk_name i18n_sha256_name tmp_ipk tmp_sha tmp_i18n_ipk tmp_i18n_sha expected actual expected_i18n actual_i18n install_output
-
-	require_command wget
-	require_command opkg
-	require_command sha256sum
-	plugin_log INFO plugin-upgrade "checking latest plugin release"
-
-	release_json="$(detect_plugin_latest_release || true)"
-	latest_version="$(printf '%s\n' "$release_json" | plugin_release_tag_from_json)"
-	ipk_url="$(printf '%s\n' "$release_json" | plugin_release_ipk_url_from_json)"
-	sha256_url="$(printf '%s\n' "$release_json" | plugin_release_sha256_url_from_json)"
-	i18n_ipk_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_ipk_url_from_json)"
-	i18n_sha256_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_sha256_url_from_json)"
-	[ -n "$latest_version" ] || fail "plugin latest release not found"
-	[ -n "$ipk_url" ] || fail "plugin ipk asset not found in latest release"
-	[ -n "$sha256_url" ] || fail "plugin sha256 asset not found in latest release"
-	validate_plugin_asset_url "$ipk_url" || fail "invalid plugin ipk download url"
-	validate_plugin_asset_url "$sha256_url" || fail "invalid plugin sha256 download url"
-	if [ -n "$i18n_ipk_url" ] && [ -n "$i18n_sha256_url" ]; then
-		validate_plugin_asset_url "$i18n_ipk_url" || fail "invalid plugin i18n ipk download url"
-		validate_plugin_asset_url "$i18n_sha256_url" || fail "invalid plugin i18n sha256 download url"
-	elif [ -n "$i18n_ipk_url" ] || [ -n "$i18n_sha256_url" ]; then
-		plugin_log WARN plugin-upgrade "plugin i18n assets incomplete; skipping i18n package"
-		i18n_ipk_url=""
-		i18n_sha256_url=""
-	fi
-
-	ipk_name="$(plugin_asset_name_from_url "$ipk_url")"
-	package_version="$(plugin_version_from_ipk_name "$ipk_name" 2>/dev/null || true)"
-	sha256_name="$(plugin_asset_name_from_url "$sha256_url")"
-	tmp_ipk="/tmp/$ipk_name"
-	tmp_sha="/tmp/$sha256_name"
-	if [ -n "$i18n_ipk_url" ] && [ -n "$i18n_sha256_url" ]; then
-		i18n_ipk_name="$(plugin_asset_name_from_url "$i18n_ipk_url")"
-		i18n_package_version="$(plugin_i18n_version_from_ipk_name "$i18n_ipk_name" 2>/dev/null || true)"
-		i18n_sha256_name="$(plugin_asset_name_from_url "$i18n_sha256_url")"
-		tmp_i18n_ipk="/tmp/$i18n_ipk_name"
-		tmp_i18n_sha="/tmp/$i18n_sha256_name"
-	else
-		i18n_ipk_name=""
-		i18n_package_version=""
-		i18n_sha256_name=""
-		tmp_i18n_ipk=""
-		tmp_i18n_sha=""
-	fi
-	rm -f "$tmp_ipk" "$tmp_sha" "$tmp_i18n_ipk" "$tmp_i18n_sha"
-	plugin_log INFO plugin-upgrade "downloading plugin version=$latest_version ipk=$ipk_name"
-	wget -q -O "$tmp_ipk" "$ipk_url" || fail "plugin ipk download failed"
-	[ -s "$tmp_ipk" ] || fail "downloaded plugin ipk is empty"
-	wget -q -O "$tmp_sha" "$sha256_url" || fail "plugin sha256 download failed"
-	[ -s "$tmp_sha" ] || fail "downloaded plugin sha256 is empty"
-	if [ -n "$tmp_i18n_ipk" ]; then
-		plugin_log INFO plugin-upgrade "downloading plugin i18n version=$latest_version ipk=$i18n_ipk_name"
-		wget -q -O "$tmp_i18n_ipk" "$i18n_ipk_url" || fail "plugin i18n ipk download failed"
-		[ -s "$tmp_i18n_ipk" ] || fail "downloaded plugin i18n ipk is empty"
-		wget -q -O "$tmp_i18n_sha" "$i18n_sha256_url" || fail "plugin i18n sha256 download failed"
-		[ -s "$tmp_i18n_sha" ] || fail "downloaded plugin i18n sha256 is empty"
-	fi
-	expected="$(sed -n 's/^\([A-Fa-f0-9]\{64\}\).*/\1/p' "$tmp_sha" | sed -n '1p')"
-	[ -n "$expected" ] || fail "invalid plugin sha256 file"
-	actual="$(sha256sum "$tmp_ipk" 2>/dev/null | awk '{print $1}')"
-	[ -n "$actual" ] || fail "failed to calculate plugin ipk sha256"
-	[ "$expected" = "$actual" ] || fail "plugin ipk sha256 mismatch"
-	if [ -n "$tmp_i18n_ipk" ]; then
-		expected_i18n="$(sed -n 's/^\([A-Fa-f0-9]\{64\}\).*/\1/p' "$tmp_i18n_sha" | sed -n '1p')"
-		[ -n "$expected_i18n" ] || fail "invalid plugin i18n sha256 file"
-		actual_i18n="$(sha256sum "$tmp_i18n_ipk" 2>/dev/null | awk '{print $1}')"
-		[ -n "$actual_i18n" ] || fail "failed to calculate plugin i18n ipk sha256"
-		[ "$expected_i18n" = "$actual_i18n" ] || fail "plugin i18n ipk sha256 mismatch"
-	else
-		actual_i18n=""
-	fi
-
-	rm -f "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
-	: > "$DEFER_RPCD_RELOAD_MARKER"
-	if [ -n "$tmp_i18n_ipk" ]; then
-		install_output="$(opkg install "$tmp_ipk" "$tmp_i18n_ipk" 2>&1)" || {
-			rm -f "$DEFER_RPCD_RELOAD_MARKER" "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
-			fail "plugin install failed: $install_output"
-		}
-	else
-		install_output="$(opkg install "$tmp_ipk" 2>&1)" || {
-			rm -f "$DEFER_RPCD_RELOAD_MARKER" "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
-			fail "plugin install failed: $install_output"
-		}
-	fi
-	rm -f "$DEFER_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
-	rm -f "$tmp_ipk" "$tmp_sha" "$tmp_i18n_ipk" "$tmp_i18n_sha" >/dev/null 2>&1 || true
-	plugin_log INFO plugin-upgrade "plugin upgraded version=$latest_version package_version=$package_version i18n_package_version=$i18n_package_version sha256=$actual i18n_sha256=$actual_i18n"
-	if [ -f "$NEEDS_RPCD_RELOAD_MARKER" ]; then
-		(
-			sleep 2
-			rm -f "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
-			/etc/init.d/rpcd reload >/dev/null 2>&1 || true
-		) >/dev/null 2>&1 &
-		plugin_log INFO plugin-upgrade "scheduled deferred rpcd reload"
-	fi
-
-	json_init
-	json_add_boolean success 1
-	json_add_string action plugin-upgrade
-	json_add_string message "plugin upgraded; refresh this page"
-	json_add_string package "$PLUGIN_PACKAGE"
-	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
-	json_add_string version "$latest_version"
-	json_add_string package_version "$package_version"
-	json_add_string i18n_package_version "$i18n_package_version"
-	json_add_string ipk_name "$ipk_name"
-	json_add_string i18n_ipk_name "$i18n_ipk_name"
-	json_add_string sha256 "$actual"
-	json_add_string i18n_sha256 "$actual_i18n"
 	json_dump
 }
 
@@ -1345,7 +1140,7 @@ collect_status() {
 		running=1
 	fi
 	if [ "$installed" -eq 1 ]; then
-		detected_version="$(detect_binary_version "$binary" || true)"
+		detected_version="$(detect_nora_binary_version "$binary" || true)"
 	fi
 	json_init
 	json_add_boolean success 1
@@ -1415,6 +1210,241 @@ read_uci_config() {
 	json_dump
 }
 
+# -----------------------------------------------------------------------------
+# Plugin operations
+# -----------------------------------------------------------------------------
+
+plugin_current_version() {
+	command -v opkg >/dev/null 2>&1 || return 1
+	opkg status "$PLUGIN_PACKAGE" 2>/dev/null | sed -n 's/^Version:[[:space:]]*//p' | sed -n '1p'
+}
+
+detect_plugin_latest_release() {
+	github_latest_release "$PLUGIN_REPO"
+}
+
+plugin_release_ipk_url_from_json() {
+	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-app-nora_[^"]*_all\.ipk\)".*/\1/p' | sed -n '1p'
+}
+
+plugin_release_sha256_url_from_json() {
+	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-app-nora_[^"]*_all\.ipk\.sha256\)".*/\1/p' | sed -n '1p'
+}
+
+plugin_release_i18n_ipk_url_from_json() {
+	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-i18n-nora-zh-cn_[^"]*_all\.ipk\)".*/\1/p' | sed -n '1p'
+}
+
+plugin_release_i18n_sha256_url_from_json() {
+	sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*luci-i18n-nora-zh-cn_[^"]*_all\.ipk\.sha256\)".*/\1/p' | sed -n '1p'
+}
+
+plugin_asset_name_from_url() {
+	local url="$1"
+	printf '%s' "${url##*/}"
+}
+
+plugin_version_from_ipk_name() {
+	local name="$1" version
+	version="${name#luci-app-nora_}"
+	version="${version%_all.ipk}"
+	[ "$version" != "$name" ] || return 1
+	printf '%s' "$version"
+}
+
+plugin_i18n_version_from_ipk_name() {
+	local name="$1" version
+	version="${name#luci-i18n-nora-zh-cn_}"
+	version="${version%_all.ipk}"
+	[ "$version" != "$name" ] || return 1
+	printf '%s' "$version"
+}
+
+validate_plugin_asset_url() {
+	local url="$1"
+	case "$url" in
+		https://github.com/$PLUGIN_REPO/releases/download/*/luci-app-nora_*_all.ipk|https://github.com/$PLUGIN_REPO/releases/download/*/luci-app-nora_*_all.ipk.sha256|https://github.com/$PLUGIN_REPO/releases/download/*/luci-i18n-nora-zh-cn_*_all.ipk|https://github.com/$PLUGIN_REPO/releases/download/*/luci-i18n-nora-zh-cn_*_all.ipk.sha256) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+collect_plugin_latest_version() {
+	local release_json latest_version package_version i18n_package_version ipk_url sha256_url i18n_ipk_url i18n_sha256_url ipk_name i18n_ipk_name current_version upgrade_available
+	release_json="$(detect_plugin_latest_release || true)"
+	latest_version="$(printf '%s\n' "$release_json" | github_release_tag_from_json)"
+	ipk_url="$(printf '%s\n' "$release_json" | plugin_release_ipk_url_from_json)"
+	sha256_url="$(printf '%s\n' "$release_json" | plugin_release_sha256_url_from_json)"
+	i18n_ipk_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_ipk_url_from_json)"
+	i18n_sha256_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_sha256_url_from_json)"
+	ipk_name="$(plugin_asset_name_from_url "$ipk_url")"
+	i18n_ipk_name="$(plugin_asset_name_from_url "$i18n_ipk_url")"
+	package_version="$(plugin_version_from_ipk_name "$ipk_name" 2>/dev/null || true)"
+	i18n_package_version="$(plugin_i18n_version_from_ipk_name "$i18n_ipk_name" 2>/dev/null || true)"
+	current_version="$(plugin_current_version || true)"
+	upgrade_available=0
+	[ -n "$package_version" ] && [ -n "$current_version" ] && [ "$package_version" != "$current_version" ] && upgrade_available=1
+
+	json_init
+	json_add_boolean success 1
+	json_add_string action plugin-latest-version
+	json_add_string package "$PLUGIN_PACKAGE"
+	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
+	json_add_string repository "$PLUGIN_REPO"
+	json_add_string current_version "$current_version"
+	json_add_string latest_version "$latest_version"
+	json_add_string package_version "$package_version"
+	json_add_string i18n_package_version "$i18n_package_version"
+	json_add_string ipk_name "$ipk_name"
+	json_add_string i18n_ipk_name "$i18n_ipk_name"
+	json_add_string ipk_url "$ipk_url"
+	json_add_string sha256_url "$sha256_url"
+	json_add_string i18n_ipk_url "$i18n_ipk_url"
+	json_add_string i18n_sha256_url "$i18n_sha256_url"
+	json_add_boolean upgrade_available "$upgrade_available"
+	json_dump
+}
+
+collect_plugin_status() {
+	local current_version opkg_available wget_available sha256sum_available
+	current_version="$(plugin_current_version || true)"
+	opkg_available=0; wget_available=0; sha256sum_available=0
+	command -v opkg >/dev/null 2>&1 && opkg_available=1
+	command -v wget >/dev/null 2>&1 && wget_available=1
+	command -v sha256sum >/dev/null 2>&1 && sha256sum_available=1
+
+	json_init
+	json_add_boolean success 1
+	json_add_string action plugin-status
+	json_add_string package "$PLUGIN_PACKAGE"
+	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
+	json_add_string repository "$PLUGIN_REPO"
+	json_add_string current_version "$current_version"
+	json_add_boolean installed "$( [ -n "$current_version" ] && printf 1 || printf 0 )"
+	json_add_boolean opkg_available "$opkg_available"
+	json_add_boolean wget_available "$wget_available"
+	json_add_boolean sha256sum_available "$sha256sum_available"
+	json_dump
+}
+
+plugin_upgrade() {
+	local release_json latest_version package_version i18n_package_version ipk_url sha256_url i18n_ipk_url i18n_sha256_url ipk_name sha256_name i18n_ipk_name i18n_sha256_name tmp_ipk tmp_sha tmp_i18n_ipk tmp_i18n_sha expected actual expected_i18n actual_i18n install_output
+
+	require_command wget
+	require_command opkg
+	require_command sha256sum
+	plugin_log INFO plugin-upgrade "checking latest plugin release"
+
+	release_json="$(detect_plugin_latest_release || true)"
+	latest_version="$(printf '%s\n' "$release_json" | github_release_tag_from_json)"
+	ipk_url="$(printf '%s\n' "$release_json" | plugin_release_ipk_url_from_json)"
+	sha256_url="$(printf '%s\n' "$release_json" | plugin_release_sha256_url_from_json)"
+	i18n_ipk_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_ipk_url_from_json)"
+	i18n_sha256_url="$(printf '%s\n' "$release_json" | plugin_release_i18n_sha256_url_from_json)"
+	[ -n "$latest_version" ] || fail "plugin latest release not found"
+	[ -n "$ipk_url" ] || fail "plugin ipk asset not found in latest release"
+	[ -n "$sha256_url" ] || fail "plugin sha256 asset not found in latest release"
+	validate_plugin_asset_url "$ipk_url" || fail "invalid plugin ipk download url"
+	validate_plugin_asset_url "$sha256_url" || fail "invalid plugin sha256 download url"
+	if [ -n "$i18n_ipk_url" ] && [ -n "$i18n_sha256_url" ]; then
+		validate_plugin_asset_url "$i18n_ipk_url" || fail "invalid plugin i18n ipk download url"
+		validate_plugin_asset_url "$i18n_sha256_url" || fail "invalid plugin i18n sha256 download url"
+	elif [ -n "$i18n_ipk_url" ] || [ -n "$i18n_sha256_url" ]; then
+		plugin_log WARN plugin-upgrade "plugin i18n assets incomplete; skipping i18n package"
+		i18n_ipk_url=""
+		i18n_sha256_url=""
+	fi
+
+	ipk_name="$(plugin_asset_name_from_url "$ipk_url")"
+	package_version="$(plugin_version_from_ipk_name "$ipk_name" 2>/dev/null || true)"
+	sha256_name="$(plugin_asset_name_from_url "$sha256_url")"
+	tmp_ipk="/tmp/$ipk_name"
+	tmp_sha="/tmp/$sha256_name"
+	if [ -n "$i18n_ipk_url" ] && [ -n "$i18n_sha256_url" ]; then
+		i18n_ipk_name="$(plugin_asset_name_from_url "$i18n_ipk_url")"
+		i18n_package_version="$(plugin_i18n_version_from_ipk_name "$i18n_ipk_name" 2>/dev/null || true)"
+		i18n_sha256_name="$(plugin_asset_name_from_url "$i18n_sha256_url")"
+		tmp_i18n_ipk="/tmp/$i18n_ipk_name"
+		tmp_i18n_sha="/tmp/$i18n_sha256_name"
+	else
+		i18n_ipk_name=""
+		i18n_package_version=""
+		i18n_sha256_name=""
+		tmp_i18n_ipk=""
+		tmp_i18n_sha=""
+	fi
+	rm -f "$tmp_ipk" "$tmp_sha" "$tmp_i18n_ipk" "$tmp_i18n_sha"
+	plugin_log INFO plugin-upgrade "downloading plugin version=$latest_version ipk=$ipk_name"
+	wget -q -O "$tmp_ipk" "$ipk_url" || fail "plugin ipk download failed"
+	[ -s "$tmp_ipk" ] || fail "downloaded plugin ipk is empty"
+	wget -q -O "$tmp_sha" "$sha256_url" || fail "plugin sha256 download failed"
+	[ -s "$tmp_sha" ] || fail "downloaded plugin sha256 is empty"
+	if [ -n "$tmp_i18n_ipk" ]; then
+		plugin_log INFO plugin-upgrade "downloading plugin i18n version=$latest_version ipk=$i18n_ipk_name"
+		wget -q -O "$tmp_i18n_ipk" "$i18n_ipk_url" || fail "plugin i18n ipk download failed"
+		[ -s "$tmp_i18n_ipk" ] || fail "downloaded plugin i18n ipk is empty"
+		wget -q -O "$tmp_i18n_sha" "$i18n_sha256_url" || fail "plugin i18n sha256 download failed"
+		[ -s "$tmp_i18n_sha" ] || fail "downloaded plugin i18n sha256 is empty"
+	fi
+	expected="$(sed -n 's/^\([A-Fa-f0-9]\{64\}\).*/\1/p' "$tmp_sha" | sed -n '1p')"
+	[ -n "$expected" ] || fail "invalid plugin sha256 file"
+	actual="$(sha256sum "$tmp_ipk" 2>/dev/null | awk '{print $1}')"
+	[ -n "$actual" ] || fail "failed to calculate plugin ipk sha256"
+	[ "$expected" = "$actual" ] || fail "plugin ipk sha256 mismatch"
+	if [ -n "$tmp_i18n_ipk" ]; then
+		expected_i18n="$(sed -n 's/^\([A-Fa-f0-9]\{64\}\).*/\1/p' "$tmp_i18n_sha" | sed -n '1p')"
+		[ -n "$expected_i18n" ] || fail "invalid plugin i18n sha256 file"
+		actual_i18n="$(sha256sum "$tmp_i18n_ipk" 2>/dev/null | awk '{print $1}')"
+		[ -n "$actual_i18n" ] || fail "failed to calculate plugin i18n ipk sha256"
+		[ "$expected_i18n" = "$actual_i18n" ] || fail "plugin i18n ipk sha256 mismatch"
+	else
+		actual_i18n=""
+	fi
+
+	rm -f "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+	: > "$DEFER_RPCD_RELOAD_MARKER"
+	if [ -n "$tmp_i18n_ipk" ]; then
+		install_output="$(opkg install "$tmp_ipk" "$tmp_i18n_ipk" 2>&1)" || {
+			rm -f "$DEFER_RPCD_RELOAD_MARKER" "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+			fail "plugin install failed: $install_output"
+		}
+	else
+		install_output="$(opkg install "$tmp_ipk" 2>&1)" || {
+			rm -f "$DEFER_RPCD_RELOAD_MARKER" "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+			fail "plugin install failed: $install_output"
+		}
+	fi
+	rm -f "$DEFER_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+	rm -f "$tmp_ipk" "$tmp_sha" "$tmp_i18n_ipk" "$tmp_i18n_sha" >/dev/null 2>&1 || true
+	plugin_log INFO plugin-upgrade "plugin upgraded version=$latest_version package_version=$package_version i18n_package_version=$i18n_package_version sha256=$actual i18n_sha256=$actual_i18n"
+	if [ -f "$NEEDS_RPCD_RELOAD_MARKER" ]; then
+		(
+			sleep 2
+			rm -f "$NEEDS_RPCD_RELOAD_MARKER" >/dev/null 2>&1 || true
+			/etc/init.d/rpcd reload >/dev/null 2>&1 || true
+		) >/dev/null 2>&1 &
+		plugin_log INFO plugin-upgrade "scheduled deferred rpcd reload"
+	fi
+
+	json_init
+	json_add_boolean success 1
+	json_add_string action plugin-upgrade
+	json_add_string message "plugin upgraded; refresh this page"
+	json_add_string package "$PLUGIN_PACKAGE"
+	json_add_string i18n_package "$PLUGIN_I18N_PACKAGE"
+	json_add_string version "$latest_version"
+	json_add_string package_version "$package_version"
+	json_add_string i18n_package_version "$i18n_package_version"
+	json_add_string ipk_name "$ipk_name"
+	json_add_string i18n_ipk_name "$i18n_ipk_name"
+	json_add_string sha256 "$actual"
+	json_add_string i18n_sha256 "$actual_i18n"
+	json_dump
+}
+
+# -----------------------------------------------------------------------------
+# Command dispatch
+# -----------------------------------------------------------------------------
+
 usage() {
 	fail "usage: nora-control {status|latest-version|plugin-status|plugin-latest-version|plugin-upgrade|read-uci-config|logs|install|upgrade|upload-binary|render-nora-config|read-nora-config|save-settings|start|stop|restart|set-htpasswd|firewall-apply}"
 }
@@ -1425,7 +1455,7 @@ main() {
 			collect_status
 			;;
 		latest-version)
-			collect_latest_version
+			collect_nora_latest_version
 			;;
 		plugin-status)
 			collect_plugin_status
@@ -1443,14 +1473,14 @@ main() {
 			read_logs "$2" "$3" "$4"
 			;;
 		install)
-			download_binary "${2:-latest}" "install"
+			download_nora_binary "${2:-latest}" "install"
 			;;
 		upgrade)
-			download_binary "latest" "upgrade"
+			download_nora_binary "latest" "upgrade"
 			;;
 		upload-binary)
 			[ $# -eq 2 ] || fail "upload-binary requires uploaded file path"
-			upload_binary "$2"
+			upload_nora_binary "$2"
 			;;
 		render-nora-config|render-config)
 			render_nora_config
