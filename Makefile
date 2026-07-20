@@ -88,9 +88,6 @@ define Package/$(PKG_NAME)/prerm
 #!/bin/sh
 
 if [ "$${1:-remove}" != "upgrade" ] && [ -z "$${IPKG_INSTROOT}" ] && [ -x /etc/init.d/nora ]; then
-	/etc/init.d/nora stop >/dev/null 2>&1 || true
-	/etc/init.d/nora disable >/dev/null 2>&1 || true
-	rm -f /etc/init.d/nora >/dev/null 2>&1 || true
 	uci -q delete firewall.nora >/dev/null 2>&1 || true
 	uci commit firewall >/dev/null 2>&1 || true
 	/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true
@@ -103,7 +100,6 @@ define Package/$(PKG_NAME)/postrm
 #!/bin/sh
 
 if [ "$${1:-remove}" != "upgrade" ]; then
-	rm -f "$${IPKG_INSTROOT}/etc/init.d/nora" >/dev/null 2>&1 || true
 	rm -f "$${IPKG_INSTROOT}/etc/config/nora" >/dev/null 2>&1 || true
 	rm -f "$${IPKG_INSTROOT}/usr/libexec/nora-run" >/dev/null 2>&1 || true
 	rm -f "$${IPKG_INSTROOT}"/etc/rc.d/*nora >/dev/null 2>&1 || true
