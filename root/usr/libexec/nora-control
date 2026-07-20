@@ -106,6 +106,29 @@ set_uci_option() {
 	uci set "$UCI_CONFIG.$UCI_SECTION.$1=$2" >/dev/null 2>&1 || fail "failed to save $1"
 }
 
+json_get_setting_value() {
+	local dest="$1" key="$2" current="$3" type value
+
+	if ! json_get_type type "$key"; then
+		eval "$dest=\"\$current\""
+		return 0
+	fi
+
+	case "$type" in
+		null)
+			value=''
+			;;
+		string|int|double|boolean)
+			json_get_var value "$key" || value=''
+			;;
+		*)
+			return 1
+			;;
+	esac
+
+	eval "$dest=\"\$value\""
+}
+
 delete_uci_option() {
 	uci -q delete "$UCI_CONFIG.$UCI_SECTION.$1" >/dev/null 2>&1 || true
 }
@@ -604,11 +627,7 @@ render_nora_config() {
 
 	public_line="public_url = \"$(toml_escape "$CFG_PUBLIC_URL")\""
 
-	if [ -n "$CFG_NPM_PROXY" ]; then
-		npm_proxy_line="proxy = \"$(toml_escape "$CFG_NPM_PROXY")\""
-	else
-		npm_proxy_line=''
-	fi
+	npm_proxy_line="proxy = \"$(toml_escape "$CFG_NPM_PROXY")\""
 
 	umask 077
 	cat > "$tmp" <<EOF
@@ -775,20 +794,13 @@ save_settings() {
 	case "$section" in
 		global)
 			local install_dir boot_enabled host port allow_wan_access nora_log_max_size plugin_log_max_size
-			json_get_var install_dir install_dir
-			json_get_var boot_enabled boot_enabled
-			json_get_var port port
-			json_get_var allow_wan_access allow_wan_access
-			json_get_var nora_log_max_size nora_log_max_size
-			json_get_var plugin_log_max_size plugin_log_max_size
-
-			[ -n "$install_dir" ] || install_dir="$CFG_INSTALL_DIR"
-			[ -n "$boot_enabled" ] || boot_enabled="$(service_boot_enabled && printf 1 || printf 0)"
+			json_get_setting_value install_dir install_dir "$CFG_INSTALL_DIR" || fail "invalid install_dir"
+			json_get_setting_value boot_enabled boot_enabled "$(service_boot_enabled && printf 1 || printf 0)" || fail "invalid boot_enabled"
 			host="$(default_host)"
-			[ -n "$port" ] || port="$CFG_PORT"
-			[ -n "$allow_wan_access" ] || allow_wan_access="$CFG_ALLOW_WAN_ACCESS"
-			[ -n "$nora_log_max_size" ] || nora_log_max_size="$CFG_NORA_LOG_MAX_SIZE"
-			[ -n "$plugin_log_max_size" ] || plugin_log_max_size="$CFG_PLUGIN_LOG_MAX_SIZE"
+			json_get_setting_value port port "$CFG_PORT" || fail "invalid port"
+			json_get_setting_value allow_wan_access allow_wan_access "$CFG_ALLOW_WAN_ACCESS" || fail "invalid allow_wan_access"
+			json_get_setting_value nora_log_max_size nora_log_max_size "$CFG_NORA_LOG_MAX_SIZE" || fail "invalid nora_log_max_size"
+			json_get_setting_value plugin_log_max_size plugin_log_max_size "$CFG_PLUGIN_LOG_MAX_SIZE" || fail "invalid plugin_log_max_size"
 
 			validate_abs_path "$install_dir" || fail "invalid install_dir"
 			boot_enabled="$(normalize_bool "$boot_enabled")" || fail "invalid boot_enabled"
@@ -828,15 +840,10 @@ save_settings() {
 			;;
 		auth)
 			local auth_enabled anonymous_read htpasswd_file token_storage
-			json_get_var auth_enabled auth_enabled
-			json_get_var anonymous_read anonymous_read
-			json_get_var htpasswd_file htpasswd_file
-			json_get_var token_storage token_storage
-
-			[ -n "$auth_enabled" ] || auth_enabled="$CFG_AUTH_ENABLED"
-			[ -n "$anonymous_read" ] || anonymous_read="$CFG_ANONYMOUS_READ"
-			[ -n "$htpasswd_file" ] || htpasswd_file="$CFG_HTPASSWD_FILE"
-			[ -n "$token_storage" ] || token_storage="$CFG_TOKEN_STORAGE"
+			json_get_setting_value auth_enabled auth_enabled "$CFG_AUTH_ENABLED" || fail "invalid auth_enabled"
+			json_get_setting_value anonymous_read anonymous_read "$CFG_ANONYMOUS_READ" || fail "invalid anonymous_read"
+			json_get_setting_value htpasswd_file htpasswd_file "$CFG_HTPASSWD_FILE" || fail "invalid htpasswd_file"
+			json_get_setting_value token_storage token_storage "$CFG_TOKEN_STORAGE" || fail "invalid token_storage"
 
 			auth_enabled="$(normalize_bool "$auth_enabled")" || fail "invalid auth_enabled"
 			anonymous_read="$(normalize_bool "$anonymous_read")" || fail "invalid anonymous_read"
@@ -856,17 +863,11 @@ save_settings() {
 			;;
 		registry)
 			local npm_enabled npm_proxy npm_proxy_timeout npm_metadata_ttl storage_path
-			json_get_var npm_enabled npm_enabled
-			json_get_var npm_proxy npm_proxy
-			json_get_var npm_proxy_timeout npm_proxy_timeout
-			json_get_var npm_metadata_ttl npm_metadata_ttl
-			json_get_var storage_path storage_path
-
-			[ -n "$npm_enabled" ] || npm_enabled="$CFG_NPM_ENABLED"
-			[ -n "$npm_proxy" ] || npm_proxy="$CFG_NPM_PROXY"
-			[ -n "$npm_proxy_timeout" ] || npm_proxy_timeout="$CFG_NPM_PROXY_TIMEOUT"
-			[ -n "$npm_metadata_ttl" ] || npm_metadata_ttl="$CFG_NPM_METADATA_TTL"
-			[ -n "$storage_path" ] || storage_path="$CFG_STORAGE_PATH"
+			json_get_setting_value npm_enabled npm_enabled "$CFG_NPM_ENABLED" || fail "invalid npm_enabled"
+			json_get_setting_value npm_proxy npm_proxy "$CFG_NPM_PROXY" || fail "invalid npm_proxy"
+			json_get_setting_value npm_proxy_timeout npm_proxy_timeout "$CFG_NPM_PROXY_TIMEOUT" || fail "invalid npm_proxy_timeout"
+			json_get_setting_value npm_metadata_ttl npm_metadata_ttl "$CFG_NPM_METADATA_TTL" || fail "invalid npm_metadata_ttl"
+			json_get_setting_value storage_path storage_path "$CFG_STORAGE_PATH" || fail "invalid storage_path"
 
 			npm_enabled="$(normalize_bool "$npm_enabled")" || fail "invalid npm_enabled"
 			validate_url_or_empty "$npm_proxy" || fail "invalid npm_proxy"
@@ -888,9 +889,7 @@ save_settings() {
 			;;
 		version)
 			local architecture
-			json_get_var architecture architecture
-
-			[ -n "$architecture" ] || architecture="$CFG_ARCHITECTURE"
+			json_get_setting_value architecture architecture "$CFG_ARCHITECTURE" || fail "invalid architecture"
 			validate_architecture "$architecture" || fail "invalid architecture"
 			ensure_uci_section
 			set_uci_option architecture "$architecture"
