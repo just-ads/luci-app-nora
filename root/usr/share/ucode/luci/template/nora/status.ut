@@ -97,7 +97,7 @@ Promise.all([ L.require('rpc'), L.require('ui') ]).then(function(mods) {
 
 			var uiLink = document.getElementById('nora-link-ui');
 			var uiCard = document.getElementById('nora-ui-card');
-			var uiUrl = noraUiUrl(s);
+			var uiUrl = s.public_url || noraUiUrl(s);
 			uiLink.href = uiUrl;
 			uiLink.textContent = uiUrl;
 			uiCard.style.display = installed ? '' : 'none';
