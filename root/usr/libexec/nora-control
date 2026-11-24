@@ -304,7 +304,7 @@ normalize_host() {
 }
 
 normalize_public_url() {
-	CFG_PUBLIC_URL="$(default_public_url)"
+	[ -n "$CFG_PUBLIC_URL" ] || CFG_PUBLIC_URL="$(default_public_url)"
 }
 
 detect_nora_latest_version() {
@@ -391,7 +391,7 @@ config_load_raw_values() {
 	config_get CFG_ARCHITECTURE "$UCI_SECTION" architecture 'auto'
 	CFG_HOST="$(default_host)"
 	config_get CFG_PORT "$UCI_SECTION" port '4873'
-	CFG_PUBLIC_URL=""
+	config_get CFG_PUBLIC_URL "$UCI_SECTION" public_url ''
 	config_get CFG_STORAGE_PATH "$UCI_SECTION" storage_path "$CFG_INSTALL_DIR/data/storage"
 	config_get_bool CFG_AUTH_ENABLED "$UCI_SECTION" auth_enabled 1
 	config_get_bool CFG_ANONYMOUS_READ "$UCI_SECTION" anonymous_read 0
@@ -793,11 +793,12 @@ save_settings() {
 
 	case "$section" in
 		global)
-			local install_dir boot_enabled host port allow_wan_access nora_log_max_size plugin_log_max_size
+			local install_dir boot_enabled host port public_url allow_wan_access nora_log_max_size plugin_log_max_size
 			json_get_setting_value install_dir install_dir "$CFG_INSTALL_DIR" || fail "invalid install_dir"
 			json_get_setting_value boot_enabled boot_enabled "$(service_boot_enabled && printf 1 || printf 0)" || fail "invalid boot_enabled"
 			host="$(default_host)"
 			json_get_setting_value port port "$CFG_PORT" || fail "invalid port"
+			json_get_setting_value public_url public_url "$CFG_PUBLIC_URL" || fail "invalid public_url"
 			json_get_setting_value allow_wan_access allow_wan_access "$CFG_ALLOW_WAN_ACCESS" || fail "invalid allow_wan_access"
 			json_get_setting_value nora_log_max_size nora_log_max_size "$CFG_NORA_LOG_MAX_SIZE" || fail "invalid nora_log_max_size"
 			json_get_setting_value plugin_log_max_size plugin_log_max_size "$CFG_PLUGIN_LOG_MAX_SIZE" || fail "invalid plugin_log_max_size"
@@ -806,25 +807,29 @@ save_settings() {
 			boot_enabled="$(normalize_bool "$boot_enabled")" || fail "invalid boot_enabled"
 			validate_host "$host" || fail "invalid host"
 			validate_port "$port" || fail "invalid port"
+			validate_url_or_empty "$public_url" || fail "invalid public_url"
 			allow_wan_access="$(normalize_bool "$allow_wan_access")" || fail "invalid allow_wan_access"
 			validate_log_size "$nora_log_max_size" || fail "invalid nora_log_max_size"
 			validate_log_size "$plugin_log_max_size" || fail "invalid plugin_log_max_size"
 
-			if [ "$install_dir" != "$CFG_INSTALL_DIR" ] || [ "$host" != "$CFG_HOST" ] || [ "$port" != "$CFG_PORT" ]; then
+			if [ "$install_dir" != "$CFG_INSTALL_DIR" ] || [ "$host" != "$CFG_HOST" ] || [ "$port" != "$CFG_PORT" ] || [ "$public_url" != "$CFG_PUBLIC_URL" ]; then
 				restart_nora=1
 			fi
 
 			CFG_HOST="$host"
 			CFG_PORT="$port"
-			normalize_public_url
-			validate_url_or_empty "$CFG_PUBLIC_URL" || fail "invalid public_url"
+			CFG_PUBLIC_URL="$public_url"
 
 			ensure_uci_section
 			delete_uci_option enabled
 			set_uci_option install_dir "$install_dir"
 			set_uci_option host "$host"
 			set_uci_option port "$port"
-			delete_uci_option public_url
+			if [ -n "$public_url" ]; then
+				set_uci_option public_url "$public_url"
+			else
+				delete_uci_option public_url
+			fi
 			set_uci_option allow_wan_access "$allow_wan_access"
 			set_uci_option nora_log_max_size "$nora_log_max_size"
 			set_uci_option plugin_log_max_size "$plugin_log_max_size"
@@ -1181,6 +1186,7 @@ read_uci_config() {
 	json_add_boolean boot_enabled "$(service_boot_enabled && printf 1 || printf 0)"
 	json_add_string host "$CFG_HOST"
 	json_add_int port "$CFG_PORT"
+	json_add_string public_url "$CFG_PUBLIC_URL"
 	json_add_boolean allow_wan_access "$CFG_ALLOW_WAN_ACCESS"
 	json_add_int nora_log_max_size "$CFG_NORA_LOG_MAX_SIZE"
 	json_add_int plugin_log_max_size "$CFG_PLUGIN_LOG_MAX_SIZE"
