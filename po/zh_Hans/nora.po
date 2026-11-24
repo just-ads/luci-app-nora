@@ -297,3 +297,9 @@ msgstr "版本设置"
 
 msgid "npm"
 msgstr "npm"
+
+msgid "Public URL"
+msgstr "对外访问地址"
+
+msgid "Leave empty to automatically use the LAN IP and service port."
+msgstr "留空时自动使用局域网 IP 和服务端口。"
